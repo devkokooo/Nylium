@@ -37,8 +37,8 @@ The meaning of packet depends on packet ID and current state of the connection.
 
 The initial state of each connection is **handshaking**, and state is switched using the packets `Handshake` and `Login Success`.
 
-"Serverbound" packets are sent **from the client to the server**.
-"Clientbound" packets are sent **from the server to the client**.
+"Serverbound" packets are **received by server from client**.
+"Clientbound" packets are **sent from server to client**.
 
 ### What is packet framing?
 **Packet framing** is how a data link protocol marks the **start and end of each unit of data** sent over a connection.

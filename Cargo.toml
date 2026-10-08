@@ -1,0 +1,9 @@
+[package]
+name = "nylium"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

@@ -78,6 +78,7 @@ fn decode_packet(
 /// https://minecraft.wiki/w/Java_Edition_protocol/Packets#VarInt_and_VarLong
 /// https://protobuf.dev/programming-guides/encoding/#varints
 struct VarInt(i32);
+struct VarLong(i64);
 
 struct DataTypeError;
 
@@ -92,16 +93,36 @@ impl VarInt {
             .copied()
             .enumerate()
         {
-            val |= (byte as i32 & 0x7F) << (7 * c);
+            val |= (byte as i32 & 0b0111_1111) << (7 * c);
 
-            if byte & 0x80 == 0 {
+            if byte & 0b1000_0000 == 0 {
                 break;
             }
         }
         val
     }
 
-    fn write_var_int(val: u32) {}
+    fn write_var_int(val: i32) -> Vec<u8> {
+        // u32 makes right shifts fill with zeroes
+        let mut val = val as u32;
+        let mut bytes: Vec<u8> = Vec::new();
+
+        for _ in 0..5 {
+            let mut byte = (val & 0b0111_1111) as u8;
+            val >>= 7;
+
+            if val != 0 {
+                byte |= 0b1000_0000;
+            }
+
+            bytes.push(byte);
+
+            if val == 0 {
+                break;
+            }
+        }
+        bytes
+    }
 }
 
 #[cfg(test)]
@@ -155,6 +176,57 @@ mod tests {
 
         for (bytes, expected) in cases {
             let actual = VarInt::read_var_int(bytes);
+
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn varint_write() {
+        let cases: [(i32, &[u8]); _] = [
+            (0, &[0b0000_0000]),
+            (1, &[0b0000_0001]),
+            (2, &[0b0000_0010]),
+            (127, &[0b0111_1111]),
+            (128, &[0b1000_0000, 0b0000_0001]),
+            (150, &[0b1001_0110, 0b0000_0001]),
+            (255, &[0b1111_1111, 0b0000_0001]),
+            (25565, &[0b1101_1101, 0b1100_0111, 0b0000_0001]),
+            (2097151, &[0b1111_1111, 0b1111_1111, 0b0111_1111]),
+            (
+                2147483647,
+                &[
+                    0b1111_1111,
+                    0b1111_1111,
+                    0b1111_1111,
+                    0b1111_1111,
+                    0b0000_0111,
+                ],
+            ),
+            (
+                -1,
+                &[
+                    0b1111_1111,
+                    0b1111_1111,
+                    0b1111_1111,
+                    0b1111_1111,
+                    0b0000_1111,
+                ],
+            ),
+            (
+                -2147483648,
+                &[
+                    0b1000_0000,
+                    0b1000_0000,
+                    0b1000_0000,
+                    0b1000_0000,
+                    0b0000_1000,
+                ],
+            ),
+        ];
+
+        for (data, expected) in cases {
+            let actual = VarInt::write_var_int(data);
 
             assert_eq!(actual, expected);
         }

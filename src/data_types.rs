@@ -1,11 +1,11 @@
-struct Byte(i8); // 1 byte
-struct UByte(u8); // 1 byte
-struct Short(i16); // 2 bytes
-struct UShort(u16); // 2 bytes
-struct Int(i32); // 4 bytes
-struct Long(i64); // 8 bytes
-struct Float(f32); // 4 bytes
-struct Double(f64); // 8 bytes
+pub struct Byte(pub i8); // 1 byte
+pub struct UByte(pub u8); // 1 byte
+pub struct Short(pub i16); // 2 bytes
+pub struct UShort(pub u16); // 2 bytes
+pub struct Int(pub i32); // 4 bytes
+pub struct Long(pub i64); // 8 bytes
+pub struct Float(pub f32); // 4 bytes
+pub struct Double(pub f64); // 8 bytes
 
 /// UTF-8 string prefixed with its size in bytes as a VarInt.
 /// Maximum length of `n` characters, which varies by context.
@@ -67,12 +67,16 @@ struct String(u8); // 3 VarInt bytes prefix + 4 * n characters
 /// # References
 /// https://minecraft.wiki/w/Java_Edition_protocol/Packets#VarInt_and_VarLong
 /// https://protobuf.dev/programming-guides/encoding/#varints
-struct VarInt(i32);
-struct VarLong(i64);
+pub struct VarInt(pub i32);
+pub struct VarLong(pub i64);
 
 struct DataTypeError;
 
 impl VarInt {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        Self::write_var_int(self.0)
+    }
+
     fn read_var_int(bytes: &[u8]) -> i32 {
         const MAX_LEN: usize = 5;
 

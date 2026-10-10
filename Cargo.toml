@@ -4,6 +4,10 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
+thiserror = "2.0.21"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+
+[lints.clippy]
+pedantic = "warn"

@@ -1,13 +1,31 @@
-use std::io::Cursor;
+use std::io::{self, Cursor};
+
+use thiserror::Error;
 
 use crate::{
     data_types::{
-        ClientIntent, UShort, read_u16_short_be,
-        string::{parse_packet_string, read_string},
-        varint::read_var_int,
+        ClientIntent, UShort, read_u16_short_be, string::parse_packet_string, varint::read_var_int,
     },
-    packets::{PacketParseError, ProtocolState, send_status_response_packet},
+    packets::{ProtocolState, send_status_response_packet},
 };
+
+#[derive(Error, Debug)]
+#[error("error processing incoming packets")]
+pub enum PacketParseError {
+    #[error("failed to process strings")]
+    InvalidUTF8(#[from] std::str::Utf8Error),
+    Io(#[from] io::Error),
+    #[error("failed to process intent from request")]
+    InvalidIntent,
+    #[error("packet ID not known by server or unimplemented")]
+    UnknownPacketId,
+}
+
+impl From<u8> for PacketParseError {
+    fn from(value: u8) -> Self {
+        todo!()
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum IncomingPacket {

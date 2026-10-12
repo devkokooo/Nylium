@@ -1,9 +1,8 @@
-use std::io::{self, Cursor, Read};
-
-use crate::packets::PacketParseError;
-
 pub mod string;
 pub mod varint;
+
+use crate::packets::serverbound::PacketParseError;
+use std::io::{self, Cursor, Read};
 
 macro_rules! create_cursor_header {
     ($($name:ident => $ty:ty),+ $(,)?) => {

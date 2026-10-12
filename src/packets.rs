@@ -1,8 +1,7 @@
-mod clientbound;
-mod serverbound;
+pub mod clientbound;
+pub mod serverbound;
 
-use std::{fmt::Debug, io};
-use thiserror::Error;
+use std::fmt::Debug;
 
 pub const PROTOCOL_VERSION: i32 = 777;
 
@@ -38,32 +37,6 @@ pub enum ProtocolState {
 /// https://minecraft.wiki/w/Java_Edition_protocol/Packets#Packet_Format
 trait Packet {
     const OFFICIAL_NAME: &'static str;
-}
-
-struct DecodeError;
-
-#[derive(Error, Debug)]
-#[error("error processing incoming packets")]
-pub enum PacketParseError {
-    #[error("failed to process strings")]
-    InvalidUTF8(#[from] std::str::Utf8Error),
-    Io(#[from] io::Error),
-    #[error("failed to process intent from request")]
-    InvalidIntent,
-    #[error("packet ID not known by server or unimplemented")]
-    UnknownPacketId,
-}
-
-impl std::fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
-
-impl From<u8> for PacketParseError {
-    fn from(value: u8) -> Self {
-        todo!()
-    }
 }
 
 trait PacketSender {

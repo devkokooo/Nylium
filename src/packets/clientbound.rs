@@ -1,3 +1,12 @@
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+#[error("error writing packets")]
+pub enum PacketWriteError {
+    #[error("failed to convert type")]
+    TypeConversion(#[from] std::num::TryFromIntError),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum OutgoingPacket {
     Status(ClientStatusPacket),

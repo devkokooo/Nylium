@@ -1,6 +1,9 @@
-use std::io::{BufRead, Cursor};
+use std::io::{self, BufRead, Cursor, Write};
 
-use crate::data_types::varint::read_var_int;
+use crate::{
+    data_types::varint::{read_var_int, write_var_int},
+    packets::clientbound::PacketWriteError,
+};
 
 /// UTF-8 string prefixed with its size in bytes as a VarInt.
 /// Maximum length of `n` characters, which varies by context.
@@ -48,9 +51,19 @@ pub fn read_string<'a>(
     Ok(str)
 }
 
+pub fn write_string<W: Write>(str: &str, out: &mut W) -> Result<usize, PacketWriteError> {
+    let strlen = str.len();
+    let bytes = str.as_bytes();
+
+    let _ = write_var_int(i32::try_from(strlen)?, out);
+    let _ = out.write_all(bytes);
+
+    Ok(str.len())
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{data_types::varint::write_var_int, packets::PacketParseError};
+    use crate::data_types::varint::write_var_int;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -84,6 +97,27 @@ mod tests {
 
         let actual = parse_packet_string(&mut cursor)?;
         let expected = "mc.nyliummc.org";
+
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    fn string_write_vec(str: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        write_string(str, &mut out).unwrap();
+        out
+    }
+
+    #[test]
+    fn string_should_be_written_into_packet() -> Result<(), Box<dyn std::error::Error>> {
+        let str = "mc.nyliummc.org"; // 15 char * 4 = 60 bytes
+
+        let actual = string_write_vec(str);
+
+        let mut expected: Vec<u8> = Vec::new();
+        let str_bytes = str.as_bytes();
+        write_var_int(i32::try_from(str.len())?, &mut expected)?;
+        expected.extend(str_bytes);
 
         assert_eq!(actual, expected);
         Ok(())

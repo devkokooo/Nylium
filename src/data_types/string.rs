@@ -1,5 +1,7 @@
 use std::io::{BufRead, Cursor};
 
+use crate::data_types::varint::read_var_int;
+
 /// UTF-8 string prefixed with its size in bytes as a VarInt.
 /// Maximum length of `n` characters, which varies by context.
 ///
@@ -23,16 +25,67 @@ use std::io::{BufRead, Cursor};
 /// string length is `n * 4`, with `n <= 32767`, so the largest
 /// byte length is `32767 * 4 = 131068`, which fits within
 /// 3 VarInt bytes because they carry 21 bits (up to 2,097,151)
+pub fn parse_packet_string<'a>(
+    cursor: &mut Cursor<&'a [u8]>,
+) -> Result<&'a str, std::str::Utf8Error> {
+    let strlen_in_bytes = read_var_int(cursor);
+    let str = read_string(cursor, strlen_in_bytes as usize)?;
+
+    Ok(str)
+}
+
 pub fn read_string<'a>(
-    bytes: &mut Cursor<&'a [u8]>,
+    cursor: &mut Cursor<&'a [u8]>,
     length_in_bytes: usize,
 ) -> Result<&'a str, std::str::Utf8Error> {
-    let start = bytes.position() as usize;
+    let start = cursor.position() as usize;
     let end = start + length_in_bytes;
 
-    let inner_ref: &'a [u8] = bytes.get_ref();
+    let inner_ref: &'a [u8] = cursor.get_ref();
     let str = std::str::from_utf8(&inner_ref[start..end])?;
 
-    bytes.consume(length_in_bytes);
+    cursor.consume(length_in_bytes);
     Ok(str)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{data_types::varint::write_var_int, packets::PacketParseError};
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn string_should_be_read() -> Result<(), std::str::Utf8Error> {
+        let str = "mc.nyliummc.org".as_bytes();
+        let str_len = str.len();
+
+        let mut cursor = Cursor::new(str);
+
+        let actual = read_string(&mut cursor, str_len)?;
+        let expected = "mc.nyliummc.org";
+
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn packet_string_should_be_parsed() -> Result<(), Box<dyn std::error::Error>> {
+        let str = "mc.nyliummc.org".as_bytes();
+        let str_len = str.len();
+
+        let mut strlen_varint = Vec::new();
+        write_var_int(i32::try_from(str_len)?, &mut strlen_varint).unwrap();
+
+        strlen_varint.extend(str);
+        let packet = strlen_varint.as_slice();
+
+        let mut cursor = Cursor::new(packet);
+
+        let actual = parse_packet_string(&mut cursor)?;
+        let expected = "mc.nyliummc.org";
+
+        assert_eq!(actual, expected);
+        Ok(())
+    }
 }

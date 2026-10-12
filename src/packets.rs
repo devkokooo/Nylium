@@ -15,12 +15,6 @@ pub enum ProtocolState {
     Play,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PacketDirection {
-    Serverbound, // client -> server
-    Clientbound, // server -> client
-}
-
 /// Packet Format
 ///
 /// Packets cannot be larger than 2^21 - 1 or 2,097,151 bytes (the

@@ -2,7 +2,9 @@ use std::io::Cursor;
 
 use crate::{
     data_types::{
-        ClientIntent, UShort, read_u16_short_be, string::read_string, varint::read_var_int,
+        ClientIntent, UShort, read_u16_short_be,
+        string::{parse_packet_string, read_string},
+        varint::read_var_int,
     },
     packets::{PacketParseError, ProtocolState, send_status_response_packet},
 };
@@ -239,8 +241,7 @@ fn parse_handshake_packet_payload(
     connection_state: &mut ConnectionState,
 ) -> Result<ServerHandshakePacket, PacketParseError> {
     let protocol_version = read_var_int(cursor);
-    let strlen_in_bytes = read_var_int(cursor);
-    let server_address = read_string(cursor, strlen_in_bytes as usize)?;
+    let server_address = parse_packet_string(cursor)?;
     let server_port = read_u16_short_be(cursor)?;
     let intent = read_var_int(cursor);
     let intent = ClientIntent::try_from(intent)?;

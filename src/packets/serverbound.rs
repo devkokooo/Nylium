@@ -1,31 +1,9 @@
-use std::io::{self, Cursor};
-
-use thiserror::Error;
+use std::io::Cursor;
 
 use crate::{
-    data_types::{
-        ClientIntent, UShort, read_u16_short_be, string::parse_packet_string, varint::read_var_int,
-    },
-    packets::{ProtocolState, send_status_response_packet},
+    data_types::{ClientIntent, UShort, varint::VarInt},
+    packets::{PacketDecode, PacketDecodeError, ProtocolState, send_status_response_packet},
 };
-
-#[derive(Error, Debug)]
-#[error("error processing incoming packets")]
-pub enum PacketParseError {
-    #[error("failed to process strings")]
-    InvalidUTF8(#[from] std::str::Utf8Error),
-    Io(#[from] io::Error),
-    #[error("failed to process intent from request")]
-    InvalidIntent,
-    #[error("packet ID not known by server or unimplemented")]
-    UnknownPacketId,
-}
-
-impl From<u8> for PacketParseError {
-    fn from(value: u8) -> Self {
-        todo!()
-    }
-}
 
 #[derive(Debug, PartialEq)]
 pub enum IncomingPacket {
@@ -214,7 +192,7 @@ impl Default for ConnectionState {
 fn parse_incoming_packet(
     raw_bytes: &[u8],
     connection_state: &mut ConnectionState,
-) -> Result<IncomingPacket, PacketParseError> {
+) -> Result<IncomingPacket, PacketDecodeError> {
     let ConnectionState {
         server_state,
         client_intent,
@@ -230,7 +208,7 @@ fn parse_incoming_packet(
                 let data = parse_handshake_packet_payload(&mut cursor, connection_state)?;
                 Ok(IncomingPacket::Handshake(data))
             }
-            _ => Err(PacketParseError::UnknownPacketId),
+            _ => Err(PacketDecodeError::UnknownPacketId),
         },
         ProtocolState::Status => {
             let packet_id = ServerStatusPacketId::try_from(packet_id)?;
@@ -257,12 +235,11 @@ fn parse_incoming_packet(
 fn parse_handshake_packet_payload(
     cursor: &mut Cursor<&[u8]>,
     connection_state: &mut ConnectionState,
-) -> Result<ServerHandshakePacket, PacketParseError> {
-    let protocol_version = read_var_int(cursor);
-    let server_address = parse_packet_string(cursor)?;
-    let server_port = read_u16_short_be(cursor)?;
-    let intent = read_var_int(cursor);
-    let intent = ClientIntent::try_from(intent)?;
+) -> Result<ServerHandshakePacket, PacketDecodeError> {
+    let VarInt(protocol_version) = VarInt::decode(cursor)?;
+    let server_address = <&str>::decode(cursor)?;
+    let server_port = u16::decode(cursor)?;
+    let intent = ClientIntent::decode(cursor)?;
 
     connection_state.client_intent = Some(intent);
     connection_state.server_state = ProtocolState::Status;
@@ -278,9 +255,11 @@ fn parse_handshake_packet_payload(
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
-    use std::io::Write;
 
-    use crate::{data_types::varint::write_var_int, packets::PROTOCOL_VERSION};
+    use crate::{
+        data_types::varint::VarInt,
+        packets::{PROTOCOL_VERSION, PacketEncode},
+    };
 
     use super::*;
 
@@ -293,19 +272,18 @@ mod tests {
     #[test]
     fn packet_server_handshake_payload_should_be_processed()
     -> Result<(), Box<dyn std::error::Error>> {
-        let server_address = String::from("mc.somewhere.com");
+        let server_address = String::from("mc.nyliummc.org");
         let server_port: u16 = 25565;
-        let intent: i32 = 0x01;
+        let intent = 0x01;
 
         let mut packets: Vec<u8> = Vec::new();
-        write_var_int(PROTOCOL_VERSION, &mut packets)?;
+        VarInt(PROTOCOL_VERSION).encode(&mut packets)?;
 
         // Minecraft strings need prefixed VarInt for length
-        write_var_int(i32::try_from(server_address.len())?, &mut packets)?;
-        packets.write_all(server_address.as_bytes())?;
+        server_address.encode(&mut packets)?;
 
-        packets.write_all(&server_port.to_be_bytes())?;
-        write_var_int(intent, &mut packets)?;
+        server_port.encode(&mut packets)?;
+        VarInt(intent).encode(&mut packets)?;
 
         let mut actual_conn = ConnectionState {
             server_state: ProtocolState::Handshaking,

@@ -1,7 +1,12 @@
 pub mod clientbound;
 pub mod serverbound;
 
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    io::{self, Cursor, Write},
+};
+
+use thiserror::Error;
 
 pub const PROTOCOL_VERSION: i32 = 777;
 
@@ -50,3 +55,29 @@ impl PacketSender for ServerResponsePacketSender {
 }
 
 fn send_status_response_packet() {}
+
+pub trait PacketEncode {
+    fn encode(self, write: impl Write) -> io::Result<usize>;
+}
+
+pub trait PacketDecode<'input>: Sized {
+    fn decode(cursor: &mut Cursor<&'input [u8]>) -> Result<Self, PacketDecodeError>;
+}
+
+#[derive(Error, Debug)]
+#[error("error decoding incoming packets")]
+pub enum PacketDecodeError {
+    Utf8(#[from] std::str::Utf8Error),
+    #[error("failed to process strings")]
+    Io(#[from] io::Error),
+    #[error("failed to process intent from request")]
+    InvalidIntent,
+    #[error("packet ID not known by server or unimplemented")]
+    UnknownPacketId,
+}
+
+impl From<u8> for PacketDecodeError {
+    fn from(value: u8) -> Self {
+        todo!()
+    }
+}

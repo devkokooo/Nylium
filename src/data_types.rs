@@ -1,41 +1,42 @@
 pub mod string;
 pub mod varint;
 
-use crate::packets::serverbound::PacketParseError;
-use std::io::{self, Cursor, Read};
+use crate::{
+    data_types::varint::VarInt,
+    packets::{PacketDecode, PacketDecodeError, PacketEncode},
+};
+use std::io::{Cursor, Read, Write};
 
-macro_rules! create_cursor_header {
-    ($($name:ident => $ty:ty),+ $(,)?) => {
+macro_rules! impl_packet_codec {
+    ($($ty:ty),+ $(,)?) => {
         $(
-            #[allow(unused)]
-            pub fn $name(cursor: &mut Cursor<&[u8]>) -> io::Result<$ty> {
-                let mut buf = [0u8; std::mem::size_of::<$ty>()];
-                cursor.read_exact(&mut buf)?;
+            impl PacketDecode<'_> for $ty {
 
-                Ok(<$ty>::from_be_bytes(buf))
+                #[allow(unused)]
+                fn decode(cursor: &mut Cursor<&'_ [u8]>) -> Result<Self, PacketDecodeError> {
+                    use std::io::BufRead;
+
+                    let mut buf = [0u8; std::mem::size_of::<$ty>()];
+                    cursor.read_exact(&mut buf)?;
+
+                    Ok(<$ty>::from_be_bytes(buf))
+                }
+            }
+
+            impl PacketEncode for $ty {
+                #[allow(unused)]
+                fn encode(self, mut write: impl std::io::Write) -> std::io::Result<usize> {
+                    write.write(&self.to_be_bytes())
+                }
             }
         )+
     };
 }
 
-create_cursor_header! {
-    read_u8_byte => u8,
-    read_u16_short_be => u16,
-    read_u32_be => u32,
-    read_u64_be => u64,
-    read_u128_be => u128,
-
-    read_i8_byte => i8,
-    read_i16_short_be => i16,
-    read_i32_int_be => i32,
-    read_i64_long_be => i64,
-    read_i128_long_long_be => i128,
-
-    read_f32_float_be => f32,
-    read_f64_double_be => f64,
-
-    read_usize_be => usize,
-    read_isize_be => isize,
+impl_packet_codec! {
+    u8, u16, u32, u64, u128,
+    i8, i16, i32, i64, i128,
+    f32, f64, usize, isize,
 }
 
 #[derive(Debug)]
@@ -71,15 +72,13 @@ pub enum ClientIntent {
     Transfer = 3,
 }
 
-impl TryFrom<i32> for ClientIntent {
-    type Error = PacketParseError;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(ClientIntent::Status),
-            2 => Ok(ClientIntent::Login),
-            3 => Ok(ClientIntent::Transfer),
-            _ => Err(PacketParseError::InvalidIntent),
+impl PacketDecode<'_> for ClientIntent {
+    fn decode(cursor: &mut Cursor<&'_ [u8]>) -> Result<Self, PacketDecodeError> {
+        match VarInt::decode(cursor)? {
+            VarInt(1) => Ok(ClientIntent::Status),
+            VarInt(2) => Ok(ClientIntent::Login),
+            VarInt(3) => Ok(ClientIntent::Transfer),
+            _ => Err(PacketDecodeError::InvalidIntent),
         }
     }
 }

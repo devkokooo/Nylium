@@ -1,8 +1,8 @@
-use std::io::{self, BufRead, Cursor, Write};
+use std::io::{self, Cursor, Write};
 
 use crate::{
-    data_types::varint::{read_var_int, write_var_int},
-    packets::clientbound::PacketWriteError,
+    data_types::varint::VarInt,
+    packets::{PacketDecode, PacketDecodeError, PacketEncode},
 };
 
 /// UTF-8 string prefixed with its size in bytes as a VarInt.
@@ -28,98 +28,117 @@ use crate::{
 /// string length is `n * 4`, with `n <= 32767`, so the largest
 /// byte length is `32767 * 4 = 131068`, which fits within
 /// 3 VarInt bytes because they carry 21 bits (up to 2,097,151)
-pub fn parse_packet_string<'a>(
-    cursor: &mut Cursor<&'a [u8]>,
-) -> Result<&'a str, std::str::Utf8Error> {
-    let strlen_in_bytes = read_var_int(cursor);
-    let str = read_string(cursor, strlen_in_bytes as usize)?;
+impl PacketEncode for &str {
+    fn encode(self, mut write: impl Write) -> io::Result<usize> {
+        let strlen = i32::try_from(self.len())
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "string too long"))?;
 
-    Ok(str)
+        let mut bytes_written = VarInt(strlen).encode(&mut write)?;
+        write.write_all(self.as_bytes())?;
+        bytes_written += self.len();
+        Ok(bytes_written)
+    }
 }
 
-pub fn read_string<'a>(
-    cursor: &mut Cursor<&'a [u8]>,
-    length_in_bytes: usize,
-) -> Result<&'a str, std::str::Utf8Error> {
-    let start = cursor.position() as usize;
-    let end = start + length_in_bytes;
+impl<'a> PacketDecode<'a> for &'a str {
+    fn decode(cursor: &mut Cursor<&'a [u8]>) -> Result<Self, PacketDecodeError> {
+        use std::io::BufRead;
 
-    let inner_ref: &'a [u8] = cursor.get_ref();
-    let str = std::str::from_utf8(&inner_ref[start..end])?;
+        dbg!(cursor.position(), "before consume");
+        let VarInt(strlen_in_bytes) = VarInt::decode(cursor)?;
+        let strlen_in_bytes = strlen_in_bytes as usize;
+        dbg!(cursor.position(), "should consume 1");
 
-    cursor.consume(length_in_bytes);
-    Ok(str)
-}
+        let start = cursor.position() as usize;
+        let end = start + strlen_in_bytes;
 
-pub fn write_string<W: Write>(str: &str, out: &mut W) -> Result<usize, PacketWriteError> {
-    let strlen = str.len();
-    let bytes = str.as_bytes();
+        let inner_ref: &'a [u8] = cursor.get_ref();
+        let str = std::str::from_utf8(&inner_ref[start..end])?;
 
-    let _ = write_var_int(i32::try_from(strlen)?, out);
-    let _ = out.write_all(bytes);
-
-    Ok(str.len())
+        cursor.consume(strlen_in_bytes);
+        Ok(str)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::data_types::varint::write_var_int;
     use pretty_assertions::assert_eq;
 
     use super::*;
 
     #[test]
-    fn string_should_be_read() -> Result<(), std::str::Utf8Error> {
-        let str = "mc.nyliummc.org".as_bytes();
-        let str_len = str.len();
+    fn encode_decode_roundtrip() {
+        let cases: [&str; _] = [
+            "",
+            "a",
+            "mc.nyliummc.org",
+            "héllo wörld",
+            "emoji: 🐨✨🌱",
+            "初めまして",
+        ];
 
-        let mut cursor = Cursor::new(str);
+        for value in cases {
+            let mut buf = Vec::new();
+            let bytes_written = value.encode(&mut buf).unwrap();
 
-        let actual = read_string(&mut cursor, str_len)?;
-        let expected = "mc.nyliummc.org";
+            assert_eq!(bytes_written, buf.len());
 
-        assert_eq!(actual, expected);
-        Ok(())
+            let mut cursor = Cursor::new(&buf[..]);
+            let actual: &str = PacketDecode::decode(&mut cursor).unwrap();
+
+            assert_eq!(actual, value);
+        }
     }
 
     #[test]
-    fn packet_string_should_be_parsed() -> Result<(), Box<dyn std::error::Error>> {
-        let str = "mc.nyliummc.org".as_bytes();
-        let str_len = str.len();
+    fn decode_reads_varint_prefixed_utf8() {
+        // "abc" encoded as length-prefixed string: 3, 'a', 'b', 'c'
+        let bytes: &[u8] = &[0b0000_0011, b'a', b'b', b'c'];
+        let mut cursor = Cursor::new(bytes);
 
-        let mut strlen_varint = Vec::new();
-        write_var_int(i32::try_from(str_len)?, &mut strlen_varint).unwrap();
+        let actual: &str = PacketDecode::decode(&mut cursor).unwrap();
 
-        strlen_varint.extend(str);
-        let packet = strlen_varint.as_slice();
-
-        let mut cursor = Cursor::new(packet);
-
-        let actual = parse_packet_string(&mut cursor)?;
-        let expected = "mc.nyliummc.org";
-
-        assert_eq!(actual, expected);
-        Ok(())
-    }
-
-    fn string_write_vec(str: &str) -> Vec<u8> {
-        let mut out = Vec::new();
-        write_string(str, &mut out).unwrap();
-        out
+        assert_eq!(actual, "abc");
     }
 
     #[test]
-    fn string_should_be_written_into_packet() -> Result<(), Box<dyn std::error::Error>> {
-        let str = "mc.nyliummc.org"; // 15 char * 4 = 60 bytes
+    fn encode_prefixes_length_as_varint() {
+        let mut buf = Vec::new();
+        "abc".encode(&mut buf).unwrap();
 
-        let actual = string_write_vec(str);
+        assert_eq!(buf, &[0b0000_0011, b'a', b'b', b'c']);
 
-        let mut expected: Vec<u8> = Vec::new();
-        let str_bytes = str.as_bytes();
-        write_var_int(i32::try_from(str.len())?, &mut expected)?;
-        expected.extend(str_bytes);
+        let mut buf = Vec::new();
+        "nyliummc.org".encode(&mut buf).unwrap();
 
-        assert_eq!(actual, expected);
-        Ok(())
+        assert_eq!(
+            buf,
+            &[
+                0b0000_1100,
+                b'n',
+                b'y',
+                b'l',
+                b'i',
+                b'u',
+                b'm',
+                b'm',
+                b'c',
+                b'.',
+                b'o',
+                b'r',
+                b'g'
+            ]
+        );
+    }
+
+    #[test]
+    fn decode_advances_cursor_past_string() {
+        let bytes: &[u8] = &[0b0000_0011, b'a', b'b', b'c', 0b0000_0001];
+        let mut cursor = Cursor::new(bytes);
+
+        let actual: &str = PacketDecode::decode(&mut cursor).unwrap();
+
+        assert_eq!(actual, "abc");
+        assert_eq!(cursor.position(), 4);
     }
 }

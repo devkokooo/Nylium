@@ -1,4 +1,8 @@
-use std::io::{self, BufRead, Cursor, Write};
+use std::io::{self, Cursor, Write};
+
+use crate::packets::{PacketDecode, PacketDecodeError, PacketEncode};
+
+const MAX_VARINT_LENGTH: usize = 5;
 
 /// The 7 least significant bits are used to encode the value and
 /// the most significant bit indicates whether there's another byte
@@ -41,55 +45,62 @@ use std::io::{self, BufRead, Cursor, Write};
 /// # References
 /// <https://minecraft.wiki/w/Java_Edition_protocol/Packets#VarInt_and_VarLong>
 /// <https://protobuf.dev/programming-guides/encoding/#varints>
-const MAX_VARINT_LENGTH: usize = 5;
+#[derive(Debug, Copy, Clone)]
+pub struct VarInt(pub i32);
 
-/// Reads a sequence of bytes and returns a signed 32-bit VarInt
-/// The cursor parameter
-pub fn read_var_int(bytes: &mut Cursor<&[u8]>) -> i32 {
-    let mut val: i32 = 0;
+impl PacketEncode for VarInt {
+    fn encode(self, mut write: impl Write) -> io::Result<usize> {
+        // u32 makes right shifts fill with zeroes
+        let mut val = self.0.cast_unsigned();
+        let mut bytes_written: usize = 0;
 
-    for i in 0..MAX_VARINT_LENGTH {
-        let remaining = bytes.fill_buf().unwrap();
+        for _ in 0..5 {
+            let mut data = (val & 0b0111_1111) as u8;
+            val >>= 7;
 
-        if let Some(byte) = remaining.first() {
-            // save bytes in BE form
-            val |= (i32::from(*byte) & 0b0111_1111) << (7 * i);
+            // If there is data, toggle first bit
+            // this helps parser indicate next byte in LE exists
+            if val != 0 {
+                data |= 0b1000_0000;
+            }
 
-            // Mask first bit to check for next byte
-            // if 0 we reached the end of this payload
-            if byte & 0b1000_0000 == 0 {
-                bytes.consume(1);
+            write.write_all(&[data])?;
+            bytes_written += 1;
+
+            if val == 0 {
                 break;
             }
         }
-        bytes.consume(1);
+        Ok(bytes_written)
     }
-    val
 }
 
-pub fn write_var_int<W: Write>(val: i32, out: &mut W) -> io::Result<usize> {
-    // u32 makes right shifts fill with zeroes
-    let mut val = val.cast_unsigned();
-    let mut bytes_written: usize = 0;
+/// Reads a sequence of bytes and returns a signed 32-bit VarInt
+impl PacketDecode<'_> for VarInt {
+    fn decode(cursor: &mut Cursor<&'_ [u8]>) -> Result<Self, PacketDecodeError> {
+        use std::io::BufRead;
 
-    for _ in 0..5 {
-        let mut data = (val & 0b0111_1111) as u8;
-        val >>= 7;
+        let mut val: i32 = 0;
 
-        // If there is data, toggle first bit
-        // this helps parser indicate next byte in LE exists
-        if val != 0 {
-            data |= 0b1000_0000;
+        for i in 0..MAX_VARINT_LENGTH {
+            let offset = cursor.position() as usize;
+            let remaining = &cursor.get_ref()[offset..];
+
+            if let Some(byte) = remaining.first() {
+                // save bytes in BE form
+                val |= (i32::from(*byte) & 0b0111_1111) << (7 * i);
+
+                // Mask first bit to check for next byte
+                // if 0, we reached the end of this payload
+                if byte & 0b1000_0000 == 0 {
+                    cursor.consume(1);
+                    break;
+                }
+            }
+            cursor.consume(1);
         }
-
-        out.write_all(&[data])?;
-        bytes_written += 1;
-
-        if val == 0 {
-            break;
-        }
+        Ok(VarInt(val))
     }
-    Ok(bytes_written)
 }
 
 #[cfg(test)]
@@ -143,20 +154,14 @@ mod tests {
 
         for (bytes, expected) in cases {
             let mut cursor = Cursor::new(bytes);
-            let actual = read_var_int(&mut cursor);
+            let VarInt(actual) = VarInt::decode(&mut cursor).unwrap();
 
             assert_eq!(actual, expected);
         }
     }
 
-    fn varint_write_vec(val: i32) -> Vec<u8> {
-        let mut out = Vec::new();
-        write_var_int(val, &mut out).unwrap();
-        out
-    }
-
     #[test]
-    fn varint_write() {
+    fn encode_i32_varint() {
         let cases: [(i32, &[u8]); _] = [
             (0, &[0b0000_0000]),
             (1, &[0b0000_0001]),
@@ -200,9 +205,11 @@ mod tests {
         ];
 
         for (data, expected) in cases {
-            let actual = varint_write_vec(data);
+            let mut out = Vec::new();
+            let bytes_written = VarInt(data).encode(&mut out).unwrap();
 
-            assert_eq!(actual, expected);
+            assert_eq!(out, expected);
+            assert_eq!(bytes_written, expected.len());
         }
     }
 }

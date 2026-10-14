@@ -148,6 +148,7 @@ mod tests {
             i += 4;
         }
 
+        // Iterate through 1024 locations & timestamps
         for i in 0..1024 {
             let chunk_x = i % REGION_LENGTH as usize;
             let chunk_z = i / REGION_LENGTH as usize;
@@ -199,6 +200,15 @@ mod tests {
                     compressed.len(),
                     decomp.len()
                 );
+
+                let mut i = 0;
+
+                // TODO: temp, manual parsing to verify bytes
+                while i < 512 {
+                    let byte = decomp[i];
+                    print!("0x{byte:02x} ");
+                    i += 1;
+                }
             }
         }
 

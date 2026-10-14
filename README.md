@@ -6,11 +6,28 @@ Inspired by [PumpkinMC](https://github.com/Pumpkin-MC/Pumpkin).
 Focus will be [**Java Edition protocol version 777 (26.3)**](https://minecraft.wiki/w/Java_Edition_protocol/Packets)
 
 ## Outline Plan (mid)
-Intermediate Nylium implementation will include **chunk and movement** logic.
+Intermediate Nylium implementation will include **chunk and block** logic.
 
 The logic will focus on a single chunk with hardcoded blocks near spawn, with a minimal block palette.
 
 Unit and integration tests will verify the logic in-memory without needing a real client connection.
+
+Architecture for testing:
+```
+vanilla fixture
+  ➜ vanilla-file parser
+  ➜ canonical in-memory chunk
+  ➜ semantic assertions
+
+canonical in-memory chunk
+  ➜ Nylium writer
+  ➜ Nylium parser
+  ➜ normalized comparison
+
+canonical in-memory chunk
+  ➜ protocol encoder
+  ➜ packet-level tests
+```
 
 ## Outline Plan (early)
 Early Nylium implementation will be a **codec pipeline** to test fixtures in possible server/client packet boundaries, without TCP.

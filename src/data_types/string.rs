@@ -44,10 +44,8 @@ impl<'a> PacketDecode<'a> for &'a str {
     fn decode(cursor: &mut Cursor<&'a [u8]>) -> Result<Self, PacketDecodeError> {
         use std::io::BufRead;
 
-        dbg!(cursor.position(), "before consume");
         let VarInt(strlen_in_bytes) = VarInt::decode(cursor)?;
         let strlen_in_bytes = strlen_in_bytes as usize;
-        dbg!(cursor.position(), "should consume 1");
 
         let start = cursor.position() as usize;
         let end = start + strlen_in_bytes;

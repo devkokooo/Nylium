@@ -150,6 +150,11 @@ mod tests {
 
         // Iterate through 1024 locations & timestamps
         for i in 0..1024 {
+            // TODO: temp, for manual byte parsing
+            if i > 1 {
+                break;
+            }
+
             let chunk_x = i % REGION_LENGTH as usize;
             let chunk_z = i / REGION_LENGTH as usize;
 

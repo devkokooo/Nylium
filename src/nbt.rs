@@ -1,3 +1,5 @@
+use std::io::{Cursor, Read};
+
 use thiserror::Error;
 
 pub enum NBTTagType {
@@ -141,6 +143,7 @@ pub enum NBTParseError {
     SliceConversion(#[from] std::array::TryFromSliceError),
     TypeConversion(#[from] std::num::TryFromIntError),
     Utf8(#[from] std::str::Utf8Error),
+    Io(#[from] std::io::Error),
 
     #[error("error parsing from iu8: {0}")]
     FromU8(u8),
@@ -161,75 +164,72 @@ impl From<i8> for NBTParseError {
     }
 }
 
-pub fn parse_nbt_payload(nbt_data: &[u8]) -> Result<NBTNode, NBTParseError> {
-    if nbt_data.len() < 3 {
+pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParseError> {
+    if cursor.get_ref().len() < 3 {
         return Err(NBTParseError::PayloadTooSmall);
     }
 
-    let tag = nbt_data[0];
-    let tag = NBTTagType::try_from(tag)?;
+    let mut tag = [0u8];
+    cursor.read_exact(&mut tag)?;
+    let tag = NBTTagType::try_from(tag[0])?;
 
-    let name = parse_nbt_name(&nbt_data[1..])?;
+    let name = parse_nbt_name(cursor)?;
     let name_len = name.len();
+
     println!("{tag}, name={name}, name_len={name_len}");
 
     // Skip the name parsing, go straight to payload
     if name_len == 0 {
-        let rest_of_data = &nbt_data[3..];
-        println!("rest={rest_of_data:?}");
-
         match tag {
             NBTTagType::Compound => {
                 let mut children: Vec<NBTNode> = Vec::new();
 
-                let node = parse_nbt_payload(&rest_of_data)?;
+                let node = parse_nbt_payload(&mut cursor)?;
                 children.push(node);
 
-                let compound = NBTNode::Compound {
-                    name: String::new(),
-                    children,
-                };
+                let compound = NBTNode::Compound { name, children };
 
                 return Ok(compound);
             }
             _ => {}
         }
     } else {
-        let rest_of_data = &nbt_data[3 + name_len..];
-        println!("rest={rest_of_data:?}");
-
         match tag {
             NBTTagType::Byte => {
-                let payload = rest_of_data[0];
-                let payload = i8::try_from(payload)?;
+                let mut payload = [0u8];
+                cursor.read_exact(&mut payload)?;
+                let payload = i8::try_from(payload[0])?;
 
                 let byte = NBTNode::Byte {
-                    name: name.to_owned(),
+                    name,
                     value: payload,
                 };
 
                 return Ok(byte);
             }
             NBTTagType::Int => {
-                let payload: [u8; 4] = rest_of_data[0..4].try_into()?;
+                let mut payload = [0u8; 4];
+                cursor.read_exact(&mut payload)?;
                 let payload = i32::from_be_bytes(payload);
 
                 let int = NBTNode::Int {
-                    name: name.to_owned(),
+                    name,
                     value: payload,
                 };
 
                 return Ok(int);
             }
             NBTTagType::String => {
-                let str_len: [u8; 2] = rest_of_data[0..=1].try_into()?;
+                let mut str_len = [0u8; 2];
+                cursor.read_exact(&mut str_len)?;
                 let str_len = u16::from_be_bytes(str_len) as usize;
 
-                let payload = &rest_of_data[2..2 + str_len];
-                let payload = str::from_utf8(payload)?.to_owned();
+                let mut payload = vec![0u8; str_len];
+                cursor.read_exact(&mut payload)?;
+                let payload = str::from_utf8(&payload)?.to_owned();
 
                 let string = NBTNode::String {
-                    name: name.to_owned(),
+                    name,
                     value: payload,
                 };
 
@@ -248,18 +248,20 @@ pub fn parse_nbt_payload(nbt_data: &[u8]) -> Result<NBTNode, NBTParseError> {
 /// Parses first 2 bytes (u16) for name length
 /// Then parses name length bytes for the name
 /// Returns empty string if no name
-fn parse_nbt_name(bytes: &[u8]) -> Result<&str, NBTParseError> {
-    let name_len: [u8; 2] = bytes[0..=1].try_into()?;
+fn parse_nbt_name(cursor: &mut Cursor<&[u8]>) -> Result<String, NBTParseError> {
+    let mut name_len = [0u8; 2];
+    cursor.read_exact(&mut name_len)?;
     let name_len = u16::from_be_bytes(name_len) as usize;
 
     if name_len == 0 {
-        return Ok("");
+        return Ok(String::new());
     }
 
-    let name = &bytes[2..2 + name_len];
-    let name = std::str::from_utf8(name)?;
+    let mut name = vec![0u8; name_len];
+    cursor.read_exact(&mut name)?;
+    let name = std::str::from_utf8(&name)?;
 
-    Ok(name)
+    Ok(name.to_owned())
 }
 
 #[cfg(test)]
@@ -278,7 +280,7 @@ mod tests {
     fn nbt_compound_parsing() -> Result<(), NBTParseError> {
         // Expected should be:
         // root NBTCompound { NBTString Status = "minecraft:full" }
-        let nbt_data = [
+        let nbt_data: [u8; _] = [
             0x0a, // Compound tag
             0x00, 0x00, // name length = 0
             // everything after is payload since no name
@@ -294,7 +296,9 @@ mod tests {
                   // 0x00, 0x00, 0x00, 0x00, // value = 0
         ];
 
-        let actual = parse_nbt_payload(&nbt_data)?;
+        let mut cursor = Cursor::new(&nbt_data[..]);
+
+        let actual = parse_nbt_payload(&mut cursor)?;
         let expected = NBTNode::Compound {
             name: String::new(),
             children: Vec::from([
@@ -317,7 +321,7 @@ mod tests {
     #[test]
     fn nbt_byte_parsing() -> Result<(), NBTParseError> {
         // Y = 64
-        let byte_data = [
+        let byte_data: [u8; _] = [
             0x01, // tag ID
             0x00, 0x01, // name size - u16
             0x59, // name (Y) - UTF-8 bytes
@@ -325,15 +329,18 @@ mod tests {
         ];
 
         // Mob = true
-        let bool_data = [
+        let bool_data: [u8; _] = [
             0x01, // tag ID
             0x00, 0x03, // name size - u16
             0x4D, 0x6F, 0x62, // name (Mob) - UTF-8 bytes
             0x01, // payload (bool, true) - 1 byte, signed
         ];
 
-        let actual_byte = parse_nbt_payload(&byte_data)?;
-        let actual_bool = parse_nbt_payload(&bool_data)?;
+        let mut cursor_byte = Cursor::new(&byte_data[..]);
+        let mut cursor_bool = Cursor::new(&bool_data[..]);
+
+        let actual_byte = parse_nbt_payload(&mut cursor_byte)?;
+        let actual_bool = parse_nbt_payload(&mut cursor_bool)?;
 
         let expected_byte = NBTNode::Byte {
             name: "Y".to_owned(),
@@ -352,7 +359,7 @@ mod tests {
 
     #[test]
     fn nbt_string_parsing() -> Result<(), NBTParseError> {
-        let bytes = [
+        let bytes: [u8; _] = [
             0x08, // String tag
             0x00, 0x06, // name length = 6
             0x53, 0x74, 0x61, 0x74, 0x75, 0x73, // name = Status
@@ -361,7 +368,9 @@ mod tests {
             0x6c, // minecraft:full
         ];
 
-        let actual = parse_nbt_payload(&bytes)?;
+        let mut cursor = Cursor::new(&bytes[..]);
+
+        let actual = parse_nbt_payload(&mut cursor)?;
         let expected = NBTNode::String {
             name: "Status".to_owned(),
             value: "minecraft:full".to_owned(),
@@ -374,14 +383,16 @@ mod tests {
 
     #[test]
     fn nbt_int_parsing() -> Result<(), NBTParseError> {
-        let bytes = [
+        let bytes: [u8; _] = [
             0x03, // Int tag
             0x00, 0x04, // name length = 4
             0x7a, 0x50, 0x6f, 0x73, // name = zPos
             0x00, 0x00, 0x00, 0x00, // value = 0
         ];
 
-        let actual = parse_nbt_payload(&bytes)?;
+        let mut cursor = Cursor::new(&bytes[..]);
+
+        let actual = parse_nbt_payload(&mut cursor)?;
         let expected = NBTNode::Int {
             name: "zPos".to_owned(),
             value: 0,

@@ -151,7 +151,7 @@ mod tests {
         // Iterate through 1024 locations & timestamps
         for i in 0..1024 {
             // TODO: temp, for manual byte parsing
-            if i > 1 {
+            if i == 1 {
                 break;
             }
 
@@ -209,7 +209,7 @@ mod tests {
                 let mut i = 0;
 
                 // TODO: temp, manual parsing to verify bytes
-                while i < 512 {
+                while i < decomp.len() {
                     let byte = decomp[i];
                     print!("0x{byte:02x} ");
                     i += 1;

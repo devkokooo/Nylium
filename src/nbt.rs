@@ -278,10 +278,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(compound);
         }
         NBTTagType::Byte => {
-            let mut payload = [0u8];
-            cursor.read_exact(&mut payload)?;
-            let payload = payload[0].cast_signed();
-
+            let payload = parse_nbt_byte(cursor)?;
             let byte = NBTNode::Byte {
                 name,
                 value: payload,
@@ -290,10 +287,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(byte);
         }
         NBTTagType::Short => {
-            let mut payload = [0u8; 2];
-            cursor.read_exact(&mut payload)?;
-            let payload = i16::from_be_bytes(payload);
-
+            let payload = parse_nbt_short(cursor)?;
             let short = NBTNode::Short {
                 name,
                 value: payload,
@@ -302,10 +296,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(short);
         }
         NBTTagType::Int => {
-            let mut payload = [0u8; 4];
-            cursor.read_exact(&mut payload)?;
-            let payload = i32::from_be_bytes(payload);
-
+            let payload = parse_nbt_int(cursor)?;
             let int = NBTNode::Int {
                 name,
                 value: payload,
@@ -314,10 +305,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(int);
         }
         NBTTagType::Long => {
-            let mut payload = [0u8; 8];
-            cursor.read_exact(&mut payload)?;
-            let payload = i64::from_be_bytes(payload);
-
+            let payload = parse_nbt_long(cursor)?;
             let long = NBTNode::Long {
                 name,
                 value: payload,
@@ -326,10 +314,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(long);
         }
         NBTTagType::Float => {
-            let mut payload = [0u8; 4];
-            cursor.read_exact(&mut payload)?;
-            let payload = f32::from_be_bytes(payload);
-
+            let payload = parse_nbt_float(cursor)?;
             let float = NBTNode::Float {
                 name,
                 value: payload,
@@ -338,10 +323,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(float);
         }
         NBTTagType::Double => {
-            let mut payload = [0u8; 8];
-            cursor.read_exact(&mut payload)?;
-            let payload = f64::from_be_bytes(payload);
-
+            let payload = parse_nbt_double(cursor)?;
             let double = NBTNode::Double {
                 name,
                 value: payload,
@@ -350,13 +332,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(double);
         }
         NBTTagType::ByteArray => {
-            let mut arr_len = [0u8; 4];
-            cursor.read_exact(&mut arr_len)?;
-            let arr_len = i32::from_be_bytes(arr_len);
-
-            let mut bytes = vec![0u8; arr_len as usize];
-            cursor.read_exact(&mut bytes)?;
-
+            let bytes = parse_nbt_byte_arr(cursor)?;
             let byte_arr = NBTNode::ByteArray {
                 name,
                 values: bytes,
@@ -365,39 +341,13 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(byte_arr);
         }
         NBTTagType::IntArray => {
-            let mut arr_len = [0u8; 4];
-            cursor.read_exact(&mut arr_len)?;
-            let arr_len = i32::from_be_bytes(arr_len);
-
-            let mut ints = vec![0i32; arr_len as usize];
-            let mut payload = [0u8; 4];
-
-            for i in 0..arr_len {
-                cursor.read_exact(&mut payload)?;
-                let payload = i32::from_be_bytes(payload);
-
-                ints[i as usize] = payload;
-            }
-
+            let ints = parse_nbt_int_arr(cursor)?;
             let int_arr = NBTNode::IntArray { name, values: ints };
 
             return Ok(int_arr);
         }
         NBTTagType::LongArray => {
-            let mut arr_len = [0u8; 4];
-            cursor.read_exact(&mut arr_len)?;
-            let arr_len = i32::from_be_bytes(arr_len);
-
-            let mut longs = vec![0i64; arr_len as usize];
-            let mut payload = [0u8; 8];
-
-            for i in 0..arr_len {
-                cursor.read_exact(&mut payload)?;
-                let payload = i64::from_be_bytes(payload);
-
-                longs[i as usize] = payload;
-            }
-
+            let longs = parse_nbt_long_arr(cursor)?;
             let long_arr = NBTNode::LongArray {
                 name,
                 values: longs,
@@ -415,36 +365,12 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(string);
         }
         NBTTagType::List => {
-            // list item tag ID
-            let mut item_id = [0u8];
-            cursor.read_exact(&mut item_id)?;
-            let item_id = u8::from_be_bytes(item_id);
-            let item_id = NBTTagType::try_from(item_id)?;
-
-            // list size - 4 bytes
-            let mut list_size = [0u8; 4];
-            cursor.read_exact(&mut list_size)?;
-            let list_size = u32::from_be_bytes(list_size) as usize;
-
-            // payloads
-            let mut arr: Vec<NBTPayloadType> = Vec::new();
-
-            match item_id {
-                NBTTagType::String => {
-                    for _ in 0..list_size {
-                        let payload = parse_nbt_string(cursor)?;
-
-                        arr.push(NBTPayloadType::String(payload));
-                    }
-                }
-                _ => {}
-            }
-
+            let arr = parse_nbt_list(cursor)?;
             let list = NBTNode::List { name, values: arr };
 
             return Ok(list);
         }
-        _ => {}
+        NBTTagType::End => {}
     }
 
     Ok(NBTNode::Byte {
@@ -472,6 +398,54 @@ fn parse_nbt_name(cursor: &mut Cursor<&[u8]>) -> Result<String, NBTParseError> {
     Ok(name.to_owned())
 }
 
+fn parse_nbt_byte(cursor: &mut Cursor<&[u8]>) -> Result<i8, NBTParseError> {
+    let mut payload = [0u8];
+    cursor.read_exact(&mut payload)?;
+    let payload = payload[0].cast_signed();
+
+    Ok(payload)
+}
+
+fn parse_nbt_short(cursor: &mut Cursor<&[u8]>) -> Result<i16, NBTParseError> {
+    let mut payload = [0u8; 2];
+    cursor.read_exact(&mut payload)?;
+    let payload = i16::from_be_bytes(payload);
+
+    Ok(payload)
+}
+
+fn parse_nbt_int(cursor: &mut Cursor<&[u8]>) -> Result<i32, NBTParseError> {
+    let mut payload = [0u8; 4];
+    cursor.read_exact(&mut payload)?;
+    let payload = i32::from_be_bytes(payload);
+
+    Ok(payload)
+}
+
+fn parse_nbt_long(cursor: &mut Cursor<&[u8]>) -> Result<i64, NBTParseError> {
+    let mut payload = [0u8; 8];
+    cursor.read_exact(&mut payload)?;
+    let payload = i64::from_be_bytes(payload);
+
+    Ok(payload)
+}
+
+fn parse_nbt_float(cursor: &mut Cursor<&[u8]>) -> Result<f32, NBTParseError> {
+    let mut payload = [0u8; 4];
+    cursor.read_exact(&mut payload)?;
+    let payload = f32::from_be_bytes(payload);
+
+    Ok(payload)
+}
+
+fn parse_nbt_double(cursor: &mut Cursor<&[u8]>) -> Result<f64, NBTParseError> {
+    let mut payload = [0u8; 8];
+    cursor.read_exact(&mut payload)?;
+    let payload = f64::from_be_bytes(payload);
+
+    Ok(payload)
+}
+
 fn parse_nbt_string(cursor: &mut Cursor<&[u8]>) -> Result<String, NBTParseError> {
     let mut str_len = [0u8; 2];
     cursor.read_exact(&mut str_len)?;
@@ -482,6 +456,82 @@ fn parse_nbt_string(cursor: &mut Cursor<&[u8]>) -> Result<String, NBTParseError>
     let payload = str::from_utf8(&payload)?.to_owned();
 
     Ok(payload)
+}
+
+fn parse_nbt_byte_arr(cursor: &mut Cursor<&[u8]>) -> Result<Vec<u8>, NBTParseError> {
+    let mut arr_len = [0u8; 4];
+    cursor.read_exact(&mut arr_len)?;
+    let arr_len = i32::from_be_bytes(arr_len);
+
+    let mut bytes = vec![0u8; arr_len as usize];
+    cursor.read_exact(&mut bytes)?;
+
+    Ok(bytes)
+}
+
+fn parse_nbt_int_arr(cursor: &mut Cursor<&[u8]>) -> Result<Vec<i32>, NBTParseError> {
+    let mut arr_len = [0u8; 4];
+    cursor.read_exact(&mut arr_len)?;
+    let arr_len = i32::from_be_bytes(arr_len);
+
+    let mut ints = vec![0i32; arr_len as usize];
+    let mut payload = [0u8; 4];
+
+    for i in 0..arr_len {
+        cursor.read_exact(&mut payload)?;
+        let payload = i32::from_be_bytes(payload);
+
+        ints[i as usize] = payload;
+    }
+
+    Ok(ints)
+}
+
+fn parse_nbt_long_arr(cursor: &mut Cursor<&[u8]>) -> Result<Vec<i64>, NBTParseError> {
+    let mut arr_len = [0u8; 4];
+    cursor.read_exact(&mut arr_len)?;
+    let arr_len = i32::from_be_bytes(arr_len);
+
+    let mut longs = vec![0i64; arr_len as usize];
+    let mut payload = [0u8; 8];
+
+    for i in 0..arr_len {
+        cursor.read_exact(&mut payload)?;
+        let payload = i64::from_be_bytes(payload);
+
+        longs[i as usize] = payload;
+    }
+
+    Ok(longs)
+}
+
+fn parse_nbt_list(cursor: &mut Cursor<&[u8]>) -> Result<Vec<NBTPayloadType>, NBTParseError> {
+    // list item tag ID
+    let mut item_id = [0u8];
+    cursor.read_exact(&mut item_id)?;
+    let item_id = u8::from_be_bytes(item_id);
+    let item_id = NBTTagType::try_from(item_id)?;
+
+    // list size - 4 bytes
+    let mut list_size = [0u8; 4];
+    cursor.read_exact(&mut list_size)?;
+    let list_size = u32::from_be_bytes(list_size) as usize;
+
+    // payloads
+    let mut arr: Vec<NBTPayloadType> = Vec::new();
+
+    match item_id {
+        NBTTagType::String => {
+            for _ in 0..list_size {
+                let payload = parse_nbt_string(cursor)?;
+
+                arr.push(NBTPayloadType::String(payload));
+            }
+        }
+        _ => {}
+    }
+
+    Ok(arr)
 }
 
 #[cfg(test)]

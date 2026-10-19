@@ -360,15 +360,34 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
 
             return Ok(byte_arr);
         }
+        NBTTagType::IntArray => {
+            let mut arr_len = [0u8; 4];
+            cursor.read_exact(&mut arr_len)?;
+            let arr_len = i32::from_be_bytes(arr_len);
+
+            let mut ints = vec![0i32; arr_len as usize];
+            let mut payload = [0u8; 4];
+
+            for i in 0..arr_len {
+                cursor.read_exact(&mut payload)?;
+                let payload = i32::from_be_bytes(payload);
+
+                ints[i as usize] = payload;
+            }
+
+            let int_arr = NBTNode::IntArray { name, values: ints };
+
+            return Ok(int_arr);
+        }
         NBTTagType::LongArray => {
             let mut arr_len = [0u8; 4];
             cursor.read_exact(&mut arr_len)?;
             let arr_len = i32::from_be_bytes(arr_len);
 
             let mut longs = vec![0i64; arr_len as usize];
+            let mut payload = [0u8; 8];
 
             for i in 0..arr_len {
-                let mut payload = [0u8; 8];
                 cursor.read_exact(&mut payload)?;
                 let payload = i64::from_be_bytes(payload);
 
@@ -809,6 +828,73 @@ mod tests {
     }
 
     #[test]
+    fn nbt_string_parsing() -> Result<(), NBTParseError> {
+        let bytes: [u8; _] = [
+            0x08, // String tag
+            0x00, 0x06, // name length = 6
+            0x53, 0x74, 0x61, 0x74, 0x75, 0x73, // name = Status
+            0x00, 0x0e, // payload length = 14
+            0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, //
+            0x66, 0x74, 0x3a, 0x66, 0x75, 0x6c, 0x6c, // minecraft:full
+        ];
+
+        let mut cursor = Cursor::new(&bytes[..]);
+
+        let actual = parse_nbt_payload(&mut cursor)?;
+        let expected = NBTNode::String {
+            name: "Status".to_owned(),
+            value: "minecraft:full".to_owned(),
+        };
+
+        assert_eq!(actual, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn nbt_list_parsing() -> Result<(), NBTParseError> {
+        let empty_list: [u8; _] = [
+            0x09, // List tag
+            0x00, 0x0e, // name length = 14
+            0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x65, //
+            0x6e, 0x74, 0x69, 0x74, 0x69, 0x65, 0x73, // name = block_entities
+            0x00, // list tag ID = 0
+            0x00, 0x00, 0x00, 0x00, // list size = 0, num of items of tag ID
+        ];
+        let expected_empty = NBTNode::List {
+            name: "block_entities".to_owned(),
+            values: Vec::new(),
+        };
+
+        let some_list: [u8; _] = [
+            0x09, // List tag
+            0x00, 0x07, // name length = 7
+            0x70, 0x61, 0x6c, 0x65, 0x74, 0x74, 0x65, // name = palette
+            0x08, // list item tag ID
+            0x00, 0x00, 0x00, 0x01, // num list items = 1
+            0x00, 0x10, // payload size = 16
+            0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, 0x66, //
+            0x74, 0x3a, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x73, // minecraft:plains
+        ];
+        let expected_some = NBTNode::List {
+            name: "palette".to_owned(),
+            values: Vec::from([NBTPayloadType::String("minecraft:plains".to_owned())]),
+        };
+
+        let cases: [(&[u8], NBTNode); _] =
+            [(&empty_list, expected_empty), (&some_list, expected_some)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn nbt_byte_array_parsing() -> Result<(), NBTParseError> {
         let bytes_some: [u8; _] = [
             0x07, // Byte array tag
@@ -834,6 +920,41 @@ mod tests {
                 0b1111_1111,
                 0b1111_1111,
                 0b1111_1110,
+            ]),
+        };
+
+        assert_eq!(actual, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn nbt_int_array_parsing() -> Result<(), NBTParseError> {
+        let bytes_some: [u8; _] = [
+            0x0b, // Int array tag
+            0x00, 0x02, // name length = 2
+            0x42, 0x42, // name = BB (for bounding box)
+            0x00, 0x00, 0x00, 0x06, // payload size = 6
+            0x00, 0x00, 0x00, 0x00, // min X
+            0x00, 0x00, 0x00, 0x00, // min Y
+            0x00, 0x00, 0x00, 0x00, // min Z
+            0x00, 0x00, 0x01, 0x00, // max X
+            0x00, 0x00, 0x01, 0x00, // max Y
+            0x00, 0x00, 0x01, 0x00, // max Z
+        ];
+
+        let mut cursor = Cursor::new(&bytes_some[..]);
+
+        let actual = parse_nbt_payload(&mut cursor)?;
+        let expected = NBTNode::IntArray {
+            name: "BB".to_owned(),
+            values: Vec::from([
+                0x00_00_00_00,
+                0x00_00_00_00,
+                0x00_00_00_00,
+                0x00_00_01_00,
+                0x00_00_01_00,
+                0x00_00_01_00,
             ]),
         };
 
@@ -898,73 +1019,6 @@ mod tests {
         };
 
         assert_eq!(actual, expected);
-
-        Ok(())
-    }
-
-    #[test]
-    fn nbt_string_parsing() -> Result<(), NBTParseError> {
-        let bytes: [u8; _] = [
-            0x08, // String tag
-            0x00, 0x06, // name length = 6
-            0x53, 0x74, 0x61, 0x74, 0x75, 0x73, // name = Status
-            0x00, 0x0e, // payload length = 14
-            0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, //
-            0x66, 0x74, 0x3a, 0x66, 0x75, 0x6c, 0x6c, // minecraft:full
-        ];
-
-        let mut cursor = Cursor::new(&bytes[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::String {
-            name: "Status".to_owned(),
-            value: "minecraft:full".to_owned(),
-        };
-
-        assert_eq!(actual, expected);
-
-        Ok(())
-    }
-
-    #[test]
-    fn nbt_list_parsing() -> Result<(), NBTParseError> {
-        let empty_list: [u8; _] = [
-            0x09, // List tag
-            0x00, 0x0e, // name length = 14
-            0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x65, //
-            0x6e, 0x74, 0x69, 0x74, 0x69, 0x65, 0x73, // name = block_entities
-            0x00, // list tag ID = 0
-            0x00, 0x00, 0x00, 0x00, // list size = 0, num of items of tag ID
-        ];
-        let expected_empty = NBTNode::List {
-            name: "block_entities".to_owned(),
-            values: Vec::new(),
-        };
-
-        let some_list: [u8; _] = [
-            0x09, // List tag
-            0x00, 0x07, // name length = 7
-            0x70, 0x61, 0x6c, 0x65, 0x74, 0x74, 0x65, // name = palette
-            0x08, // list item tag ID
-            0x00, 0x00, 0x00, 0x01, // num list items = 1
-            0x00, 0x10, // payload size = 16
-            0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, 0x66, //
-            0x74, 0x3a, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x73, // minecraft:plains
-        ];
-        let expected_some = NBTNode::List {
-            name: "palette".to_owned(),
-            values: Vec::from([NBTPayloadType::String("minecraft:plains".to_owned())]),
-        };
-
-        let cases: [(&[u8], NBTNode); _] =
-            [(&empty_list, expected_empty), (&some_list, expected_some)];
-
-        for (data, expected) in cases {
-            let mut cursor = Cursor::new(data);
-
-            let actual = parse_nbt_payload(&mut cursor)?;
-            assert_eq!(actual, expected);
-        }
 
         Ok(())
     }

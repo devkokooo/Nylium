@@ -445,11 +445,7 @@ mod tests {
             0x74, 0x3a, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x73, // minecraft:plains
             0x00, // END MARKER
         ];
-
-        let mut cursor = Cursor::new(&biome_palette[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::Compound {
+        let expected_biome = NBTNode::Compound {
             name: "biomes".to_owned(),
             children: Vec::from([NBTNode::List {
                 name: "palette".to_owned(),
@@ -457,11 +453,9 @@ mod tests {
             }]),
         };
 
-        assert_eq!(actual, expected);
-
         // Expected should be:
         // root NBTCompound { NBTString Status = "minecraft:full" }
-        let nbt_data: [u8; _] = [
+        let multiple_types: [u8; _] = [
             0x0a, // Compound tag
             0x00, 0x00, // name length = 0
             // everything after is payload since no name
@@ -477,11 +471,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, // value = 0
             0x00, // END MARKER
         ];
-
-        let mut cursor = Cursor::new(&nbt_data[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::Compound {
+        let expected_multiple = NBTNode::Compound {
             name: String::new(),
             children: Vec::from([
                 NBTNode::String {
@@ -495,9 +485,7 @@ mod tests {
             ]),
         };
 
-        assert_eq!(actual, expected);
-
-        let compound: [u8; _] = [
+        let nested_compounds: [u8; _] = [
             0x0a, // Compound tag
             0x00, 0x0a, // name length = 10
             0x73, 0x74, 0x72, 0x75, 0x63, //
@@ -515,11 +503,7 @@ mod tests {
             0x00, // End tag, mark end of compound
             0x00, // End tag for end of parent compound
         ];
-
-        let mut cursor = Cursor::new(&compound[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::Compound {
+        let expected_nested = NBTNode::Compound {
             name: "structures".to_owned(),
             children: Vec::from([
                 NBTNode::Compound {
@@ -533,7 +517,18 @@ mod tests {
             ]),
         };
 
-        assert_eq!(actual, expected);
+        let cases: [(&[u8], NBTNode); _] = [
+            (&biome_palette, expected_biome),
+            (&multiple_types, expected_multiple),
+            (&nested_compounds, expected_nested),
+        ];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
 
         Ok(())
     }
@@ -547,6 +542,10 @@ mod tests {
             0x59, // name (Y) - UTF-8 bytes
             0x40, // payload (byte, 64) - 1 byte, signed
         ];
+        let expected_byte = NBTNode::Byte {
+            name: "Y".to_owned(),
+            value: 64,
+        };
 
         // Mob = true
         let bool_data: [u8; _] = [
@@ -555,24 +554,20 @@ mod tests {
             0x4D, 0x6F, 0x62, // name (Mob) - UTF-8 bytes
             0x01, // payload (bool, true) - 1 byte, signed
         ];
-
-        let mut cursor_byte = Cursor::new(&byte_data[..]);
-        let mut cursor_bool = Cursor::new(&bool_data[..]);
-
-        let actual_byte = parse_nbt_payload(&mut cursor_byte)?;
-        let actual_bool = parse_nbt_payload(&mut cursor_bool)?;
-
-        let expected_byte = NBTNode::Byte {
-            name: "Y".to_owned(),
-            value: 64,
-        };
         let expected_bool = NBTNode::Byte {
             name: "Mob".to_owned(),
             value: 1, // 1 for true, 0 for false
         };
 
-        assert_eq!(actual_byte, expected_byte);
-        assert_eq!(actual_bool, expected_bool);
+        let cases: [(&[u8], NBTNode); _] =
+            [(&byte_data, expected_byte), (&bool_data, expected_bool)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
 
         Ok(())
     }
@@ -603,10 +598,11 @@ mod tests {
             value: 20,
         };
 
-        let cases = [(bytes_zero, expected_zero), (bytes_some, expected_some)];
+        let cases: [(&[u8], NBTNode); _] =
+            [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
 
         for (data, expected) in cases {
-            let mut cursor = Cursor::new(&data[..]);
+            let mut cursor = Cursor::new(data);
 
             let actual = parse_nbt_payload(&mut cursor)?;
             assert_eq!(actual, expected);
@@ -623,6 +619,10 @@ mod tests {
             0x7a, 0x50, 0x6f, 0x73, // name = zPos
             0x00, 0x00, 0x00, 0x00, // value = 0
         ];
+        let expected_zero = NBTNode::Int {
+            name: "zPos".to_owned(),
+            value: 0,
+        };
 
         let bytes_some: [u8; _] = [
             0x03, // Int tag
@@ -630,26 +630,20 @@ mod tests {
             0x79, 0x50, 0x6f, 0x73, // name = yPos
             0xff, 0xff, 0xff, 0xfc, // value = -4
         ];
-
-        let mut cursor = Cursor::new(&bytes_zero[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::Int {
-            name: "zPos".to_owned(),
-            value: 0,
-        };
-
-        assert_eq!(actual, expected);
-
-        let mut cursor = Cursor::new(&bytes_some[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::Int {
+        let expected_some = NBTNode::Int {
             name: "yPos".to_owned(),
             value: -4,
         };
 
-        assert_eq!(actual, expected);
+        let cases: [(&[u8], NBTNode); _] =
+            [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
 
         Ok(())
     }
@@ -772,16 +766,10 @@ mod tests {
             0x00, // list tag ID = 0
             0x00, 0x00, 0x00, 0x00, // list size = 0, num of items of tag ID
         ];
-
-        let mut cursor = Cursor::new(&empty_list[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::List {
+        let expected_empty = NBTNode::List {
             name: "block_entities".to_owned(),
             values: Vec::new(),
         };
-
-        assert_eq!(actual, expected);
 
         let some_list: [u8; _] = [
             0x09, // List tag
@@ -793,16 +781,20 @@ mod tests {
             0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, 0x66, //
             0x74, 0x3a, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x73, // minecraft:plains
         ];
-
-        let mut cursor = Cursor::new(&some_list[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::List {
+        let expected_some = NBTNode::List {
             name: "palette".to_owned(),
             values: Vec::from([NBTPayloadType::String("minecraft:plains".to_owned())]),
         };
 
-        assert_eq!(actual, expected);
+        let cases: [(&[u8], NBTNode); _] =
+            [(&empty_list, expected_empty), (&some_list, expected_some)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
 
         Ok(())
     }

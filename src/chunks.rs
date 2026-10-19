@@ -111,7 +111,7 @@ impl From<u8> for ChunkParsingError {
 mod tests {
     use std::{
         fs::File,
-        io::{BufReader, Cursor, Read, Seek, SeekFrom},
+        io::{BufReader, Cursor, Read, Seek, SeekFrom, Write},
     };
 
     use flate2::{Compression, bufread::ZlibDecoder};
@@ -153,6 +153,8 @@ mod tests {
             timestamps[i / 4] = time32;
             i += 4;
         }
+
+        let mut output_file = File::create("test_output/chunks.txt")?;
 
         // Iterate through 1024 locations & timestamps
         for i in 0..1024 {
@@ -196,9 +198,10 @@ mod tests {
             // decompress payload based on compression type
             let comp_type = CompressionType::try_from(compression_type)?;
 
-            println!(
+            writeln!(
+                output_file,
                 "Chunk (X:{chunk_x}, Z:{chunk_z}) [offset:{sector_offset}, size:{sector_size}, timestamp:{timestamp}]"
-            );
+            )?;
 
             // TODO: treat decompressed chunk data as NBT and parse it
             if comp_type == CompressionType::Zlib {
@@ -206,20 +209,22 @@ mod tests {
                 let mut decomp = Vec::new();
 
                 zd.read_to_end(&mut decomp)?;
-                println!(
+
+                writeln!(
+                    output_file,
                     "[comp_type:{compression_type}, len_comp:{}, len_decomp:{}]",
                     compressed.len(),
                     decomp.len()
-                );
+                )?;
 
                 let mut i = 0;
 
                 // TODO: temp, manual parsing to verify bytes
-                // while i < decomp.len() {
-                //     let byte = decomp[i];
-                //     print!("0x{byte:02x} ");
-                //     i += 1;
-                // }
+                while i < decomp.len() {
+                    let byte = decomp[i];
+                    write!(output_file, "0x{byte:02x} ")?;
+                    i += 1;
+                }
                 let mut cursor = Cursor::new(decomp.as_slice());
                 let res = nbt::parse_nbt_payload(&mut cursor)?;
             }

@@ -6,7 +6,7 @@ pub trait Decode<'input>: Sized {
     fn decode(cursor: &mut Cursor<&'input [u8]>) -> Result<Self, NBTParseError>;
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum NBTTagType {
     /// Used to mark the end of compound tags.
     /// It is always a single byte 0.
@@ -211,6 +211,8 @@ pub enum NBTPayloadType {
     Float(f32),
     Double(f64),
     String(String),
+    Compound(NBTNode),
+    List(Vec<NBTPayloadType>),
 }
 
 #[derive(Debug, Error)]
@@ -241,7 +243,7 @@ impl From<i8> for NBTParseError {
     }
 }
 
-pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParseError> {
+pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParseError> {
     if cursor.get_ref().len() < 3 {
         return Err(NBTParseError::PayloadTooSmall);
     }
@@ -520,13 +522,29 @@ fn parse_nbt_list(cursor: &mut Cursor<&[u8]>) -> Result<Vec<NBTPayloadType>, NBT
     // payloads
     let mut arr: Vec<NBTPayloadType> = Vec::new();
 
+    // TODO: doubles, shorts, int arrays, etc
     match item_id {
         NBTTagType::String => {
             for _ in 0..list_size {
                 let payload = parse_nbt_string(cursor)?;
-
                 arr.push(NBTPayloadType::String(payload));
             }
+        }
+        NBTTagType::Compound => {
+            for _ in 0..list_size {
+                let payload = parse_nbt_payload(cursor)?;
+                arr.push(NBTPayloadType::Compound(payload));
+            }
+        }
+        NBTTagType::List => {
+            for _ in 0..list_size {
+                let payload = parse_nbt_list(cursor)?;
+                arr.push(NBTPayloadType::List(payload));
+            }
+        }
+        // 0x00 is empty list
+        NBTTagType::End => {
+            return Ok(Vec::new());
         }
         _ => {}
     }
@@ -939,7 +957,7 @@ mod tests {
             0x09, // List tag
             0x00, 0x07, // name length = 7
             0x70, 0x61, 0x6c, 0x65, 0x74, 0x74, 0x65, // name = palette
-            0x08, // list item tag ID
+            0x08, // list item tag ID = String
             0x00, 0x00, 0x00, 0x01, // num list items = 1
             0x00, 0x10, // payload size = 16
             0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, 0x66, //
@@ -950,8 +968,103 @@ mod tests {
             values: Vec::from([NBTPayloadType::String("minecraft:plains".to_owned())]),
         };
 
-        let cases: [(&[u8], NBTNode); _] =
-            [(&empty_list, expected_empty), (&some_list, expected_some)];
+        let list_of_compound: [u8; _] = [
+            0x09, // List tag
+            0x00, 0x08, // name length = 8
+            0x73, 0x65, 0x63, 0x74, //
+            0x69, 0x6f, 0x6e, 0x73, // name = sections
+            0x0a, // list item tag ID = Compound
+            0x00, 0x00, 0x00, 0x01, // list size = 1
+            0x0a, // Compound tag
+            0x00, 0x0c, // name length = 12
+            0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, //
+            0x73, 0x74, 0x61, 0x74, 0x65, 0x73, // name = block_states
+            0x0c, // Long Array tag
+            0x00, 0x04, // name length = 4
+            0x64, 0x61, 0x74, 0x61, // name = data
+            0x00, 0x00, 0x00, 0x01, // array length = 1
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Long 1
+            0x00, // END MARKER
+        ];
+        let expected_list_compound = NBTNode::List {
+            name: "sections".to_owned(),
+            values: Vec::from([NBTPayloadType::Compound(NBTNode::Compound {
+                name: "block_states".to_owned(),
+                children: Vec::from([NBTNode::LongArray {
+                    name: "data".to_owned(),
+                    values: Vec::from([0x0000_0000_0000_0000]),
+                }]),
+            })]),
+        };
+
+        let list_of_list: [u8; _] = [
+            0x09, // List tag
+            0x00, 0x0e, // name length = 14
+            0x50, 0x6f, 0x73, 0x74, 0x50, 0x72, 0x6f, //
+            0x63, 0x65, 0x73, 0x73, 0x69, 0x6e, 0x67, // name = PostProcessing
+            0x09, // list item tag ID = List
+            0x00, 0x00, 0x00, 0x18, // list size = 24
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 1
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 2
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 3
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 4
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 5
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 6
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 7
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 8
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 9
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 10
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 11
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 12
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 13
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 14
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 15
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 16
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 17
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 18
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 19
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 20
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 21
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 22
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 23
+            0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 24
+        ];
+        let expected_list = NBTNode::List {
+            name: "PostProcessing".to_owned(),
+            values: Vec::from([
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+                NBTPayloadType::List(Vec::new()),
+            ]),
+        };
+
+        let cases: [(&[u8], NBTNode); _] = [
+            (&empty_list, expected_empty),
+            (&some_list, expected_some),
+            (&list_of_compound, expected_list_compound),
+            (&list_of_list, expected_list),
+        ];
 
         for (data, expected) in cases {
             let mut cursor = Cursor::new(data);

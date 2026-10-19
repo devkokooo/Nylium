@@ -658,16 +658,33 @@ mod tests {
             // payload = 0
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
-
-        let mut cursor = Cursor::new(&bytes_zero[..]);
-
-        let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::Long {
+        let expected_zero = NBTNode::Long {
             name: "LastUpdate".to_owned(),
             value: 0,
         };
 
-        assert_eq!(actual, expected);
+        let bytes_some: [u8; _] = [
+            0x04, // Long tag,
+            0x00, 0x0a, // name length = 10
+            0x4c, 0x61, 0x73, 0x74, 0x55, //
+            0x70, 0x64, 0x61, 0x74, 0x65, // name = LastUpdate
+            // payload = 8589934591
+            0x00, 0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF,
+        ];
+        let expected_some = NBTNode::Long {
+            name: "LastUpdate".to_owned(),
+            value: 8_589_934_591,
+        };
+
+        let cases: [(&[u8], NBTNode); _] =
+            [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
 
         Ok(())
     }

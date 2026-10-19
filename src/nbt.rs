@@ -280,7 +280,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
         NBTTagType::Byte => {
             let mut payload = [0u8];
             cursor.read_exact(&mut payload)?;
-            let payload = i8::try_from(payload[0])?;
+            let payload = payload[0].cast_signed();
 
             let byte = NBTNode::Byte {
                 name,
@@ -608,6 +608,19 @@ mod tests {
             value: 64,
         };
 
+        // Y = -4
+        let byte_negative: [u8; _] = [
+            0x01, // tag ID
+            0x00,
+            0x01,        // name size - u16
+            0x59,        // name (Y) - UTF-8 bytes
+            0b1111_1100, // payload (byte, -4) - 1 byte, signed
+        ];
+        let expected_negative = NBTNode::Byte {
+            name: "Y".to_owned(),
+            value: -4,
+        };
+
         // Mob = true
         let bool_data: [u8; _] = [
             0x01, // tag ID
@@ -620,8 +633,11 @@ mod tests {
             value: 1, // 1 for true, 0 for false
         };
 
-        let cases: [(&[u8], NBTNode); _] =
-            [(&byte_data, expected_byte), (&bool_data, expected_bool)];
+        let cases: [(&[u8], NBTNode); _] = [
+            (&byte_data, expected_byte),
+            (&byte_negative, expected_negative),
+            (&bool_data, expected_bool),
+        ];
 
         for (data, expected) in cases {
             let mut cursor = Cursor::new(data);

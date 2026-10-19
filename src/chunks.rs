@@ -9,6 +9,8 @@
 
 use thiserror::Error;
 
+use crate::nbt;
+
 const CHUNK_LENGTH: u8 = 16;
 
 // total height = 384; 384 / 16 = 24 sections
@@ -81,6 +83,8 @@ pub enum ChunkParsingError {
 
     #[error("unknown compression type: {0}")]
     UnknownCompressionType(u8),
+
+    NbtParse(#[from] nbt::NBTParseError),
 }
 
 impl From<u8> for ChunkParsingError {
@@ -107,10 +111,12 @@ impl From<u8> for ChunkParsingError {
 mod tests {
     use std::{
         fs::File,
-        io::{BufReader, Read, Seek, SeekFrom},
+        io::{BufReader, Cursor, Read, Seek, SeekFrom},
     };
 
     use flate2::{Compression, bufread::ZlibDecoder};
+
+    use crate::nbt;
 
     use super::*;
 
@@ -209,11 +215,13 @@ mod tests {
                 let mut i = 0;
 
                 // TODO: temp, manual parsing to verify bytes
-                while i < decomp.len() {
-                    let byte = decomp[i];
-                    print!("0x{byte:02x} ");
-                    i += 1;
-                }
+                // while i < decomp.len() {
+                //     let byte = decomp[i];
+                //     print!("0x{byte:02x} ");
+                //     i += 1;
+                // }
+                let mut cursor = Cursor::new(decomp.as_slice());
+                let res = nbt::parse_nbt_payload(&mut cursor)?;
             }
         }
 

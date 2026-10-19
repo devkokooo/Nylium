@@ -321,6 +321,18 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
 
             return Ok(long);
         }
+        NBTTagType::Float => {
+            let mut payload = [0u8; 4];
+            cursor.read_exact(&mut payload)?;
+            let payload = f32::from_be_bytes(payload);
+
+            let float = NBTNode::Float {
+                name,
+                value: payload,
+            };
+
+            return Ok(float);
+        }
         NBTTagType::LongArray => {
             let mut arr_len = [0u8; 4];
             cursor.read_exact(&mut arr_len)?;
@@ -674,6 +686,47 @@ mod tests {
         let expected_some = NBTNode::Long {
             name: "LastUpdate".to_owned(),
             value: 8_589_934_591,
+        };
+
+        let cases: [(&[u8], NBTNode); _] =
+            [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn nbt_float_parsing() -> Result<(), NBTParseError> {
+        let bytes_zero: [u8; _] = [
+            0x05, // Float tag
+            0x00, 0x09, // name length = 9
+            0x69, 0x6E, 0x74, 0x65, 0x67, //
+            0x72, 0x69, 0x74, 0x79, // name = integrity
+            // payload = 0
+            0x00, 0x00, 0x00, 0x00,
+        ];
+        let expected_zero = NBTNode::Float {
+            name: "integrity".to_owned(),
+            value: 0.0,
+        };
+
+        let bytes_some: [u8; _] = [
+            0x05, // Float tag
+            0x00, 0x09, // name length = 9
+            0x69, 0x6E, 0x74, 0x65, 0x67, //
+            0x72, 0x69, 0x74, 0x79, // name = integrity
+            // payload = 6.3108872e-30
+            0x0F, 0x00, 0x00, 0x00,
+        ];
+        let expected_some = NBTNode::Float {
+            name: "integrity".to_owned(),
+            value: 6.310_887_2e-30,
         };
 
         let cases: [(&[u8], NBTNode); _] =

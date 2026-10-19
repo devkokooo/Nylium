@@ -147,6 +147,7 @@ impl std::fmt::Display for NBTTagType {
 
 #[derive(Debug, PartialEq)]
 pub enum NBTNode {
+    EndMarker,
     Byte {
         name: String,
         value: i8,
@@ -171,6 +172,10 @@ pub enum NBTNode {
         name: String,
         value: f64,
     },
+    ByteArray {
+        name: String,
+        values: Vec<u8>,
+    },
     String {
         name: String,
         value: String,
@@ -183,10 +188,6 @@ pub enum NBTNode {
         name: String,
         children: Vec<NBTNode>,
     },
-    ByteArray {
-        name: String,
-        values: Vec<i8>,
-    },
     IntArray {
         name: String,
         values: Vec<i32>,
@@ -195,7 +196,6 @@ pub enum NBTNode {
         name: String,
         values: Vec<i64>,
     },
-    EndMarker,
 }
 
 #[derive(Debug, PartialEq)]
@@ -344,6 +344,21 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             };
 
             return Ok(double);
+        }
+        NBTTagType::ByteArray => {
+            let mut arr_len = [0u8; 4];
+            cursor.read_exact(&mut arr_len)?;
+            let arr_len = i32::from_be_bytes(arr_len);
+
+            let mut bytes = vec![0u8; arr_len as usize];
+            cursor.read_exact(&mut bytes)?;
+
+            let byte_arr = NBTNode::ByteArray {
+                name,
+                values: bytes,
+            };
+
+            return Ok(byte_arr);
         }
         NBTTagType::LongArray => {
             let mut arr_len = [0u8; 4];
@@ -789,6 +804,40 @@ mod tests {
             let actual = parse_nbt_payload(&mut cursor)?;
             assert_eq!(actual, expected);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn nbt_byte_array_parsing() -> Result<(), NBTParseError> {
+        let bytes_some: [u8; _] = [
+            0x07, // Byte array tag
+            0x00, 0x0a, // name length = 10
+            0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x4c, //
+            0x69, 0x67, 0x68, 0x74, // name = BlockLight
+            0x00, 0x00, 0x00, 0x08, // payload size = 8
+            0xff, 0xff, 0xff, 0xff, // 8 blocks represented, light level 15
+            0xff, 0xff, 0xff, 0xfe, // 8 blocks represented, light level 15 to 14
+        ];
+
+        let mut cursor = Cursor::new(&bytes_some[..]);
+
+        let actual = parse_nbt_payload(&mut cursor)?;
+        let expected = NBTNode::ByteArray {
+            name: "BlockLight".to_owned(),
+            values: Vec::from([
+                0b1111_1111,
+                0b1111_1111,
+                0b1111_1111,
+                0b1111_1111,
+                0b1111_1111,
+                0b1111_1111,
+                0b1111_1111,
+                0b1111_1110,
+            ]),
+        };
+
+        assert_eq!(actual, expected);
 
         Ok(())
     }

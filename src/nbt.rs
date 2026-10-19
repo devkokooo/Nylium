@@ -2,6 +2,7 @@ use std::io::{Cursor, Read};
 
 use thiserror::Error;
 
+#[derive(PartialEq)]
 pub enum NBTTagType {
     /// Used to mark the end of compound tags.
     /// It is always a single byte 0.
@@ -194,6 +195,7 @@ pub enum NBTNode {
         name: String,
         values: Vec<i64>,
     },
+    EndMarker,
 }
 
 #[derive(Debug, PartialEq)]
@@ -244,140 +246,144 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
     cursor.read_exact(&mut tag)?;
     let tag = NBTTagType::try_from(tag[0])?;
 
+    // the ONLY tag without name length bytes
+    if tag == NBTTagType::End {
+        return Ok(NBTNode::EndMarker);
+    }
+
     let name = parse_nbt_name(cursor)?;
     let name_len = name.len();
 
     println!("{tag}, name={name}, name_len={name_len}");
 
-    // Skip the name parsing, go straight to payload
-    if name_len == 0 {
-        match tag {
-            NBTTagType::Compound => {
-                let mut children: Vec<NBTNode> = Vec::new();
+    match tag {
+        NBTTagType::Compound => {
+            let mut children: Vec<NBTNode> = Vec::new();
 
-                let node = parse_nbt_payload(&mut cursor)?;
+            loop {
+                let node = parse_nbt_payload(cursor)?;
+
+                if node == NBTNode::EndMarker {
+                    break;
+                }
                 children.push(node);
-
-                let compound = NBTNode::Compound { name, children };
-
-                return Ok(compound);
             }
-            _ => {}
+
+            let compound = NBTNode::Compound { name, children };
+
+            return Ok(compound);
         }
-    } else {
-        match tag {
-            NBTTagType::Byte => {
-                let mut payload = [0u8];
-                cursor.read_exact(&mut payload)?;
-                let payload = i8::try_from(payload[0])?;
+        NBTTagType::Byte => {
+            let mut payload = [0u8];
+            cursor.read_exact(&mut payload)?;
+            let payload = i8::try_from(payload[0])?;
 
-                let byte = NBTNode::Byte {
-                    name,
-                    value: payload,
-                };
+            let byte = NBTNode::Byte {
+                name,
+                value: payload,
+            };
 
-                return Ok(byte);
-            }
-            NBTTagType::Int => {
-                let mut payload = [0u8; 4];
-                cursor.read_exact(&mut payload)?;
-                let payload = i32::from_be_bytes(payload);
+            return Ok(byte);
+        }
+        NBTTagType::Int => {
+            let mut payload = [0u8; 4];
+            cursor.read_exact(&mut payload)?;
+            let payload = i32::from_be_bytes(payload);
 
-                let int = NBTNode::Int {
-                    name,
-                    value: payload,
-                };
+            let int = NBTNode::Int {
+                name,
+                value: payload,
+            };
 
-                return Ok(int);
-            }
-            NBTTagType::Long => {
+            return Ok(int);
+        }
+        NBTTagType::Long => {
+            let mut payload = [0u8; 8];
+            cursor.read_exact(&mut payload)?;
+            let payload = i64::from_be_bytes(payload);
+
+            let long = NBTNode::Long {
+                name,
+                value: payload,
+            };
+
+            return Ok(long);
+        }
+        NBTTagType::LongArray => {
+            let mut arr_len = [0u8; 4];
+            cursor.read_exact(&mut arr_len)?;
+            let arr_len = i32::from_be_bytes(arr_len);
+
+            let mut longs = vec![0i64; arr_len as usize];
+
+            for i in 0..arr_len {
                 let mut payload = [0u8; 8];
                 cursor.read_exact(&mut payload)?;
                 let payload = i64::from_be_bytes(payload);
 
-                let long = NBTNode::Long {
-                    name,
-                    value: payload,
-                };
-
-                return Ok(long);
+                longs[i as usize] = payload;
             }
-            NBTTagType::LongArray => {
-                let mut arr_len = [0u8; 4];
-                cursor.read_exact(&mut arr_len)?;
-                let arr_len = i32::from_be_bytes(arr_len);
 
-                let mut longs = vec![0i64; arr_len as usize];
+            let long_arr = NBTNode::LongArray {
+                name,
+                values: longs,
+            };
 
-                for i in 0..arr_len {
-                    let mut payload = [0u8; 8];
-                    cursor.read_exact(&mut payload)?;
-                    let payload = i64::from_be_bytes(payload);
-
-                    longs[i as usize] = payload;
-                }
-
-                let long_arr = NBTNode::LongArray {
-                    name,
-                    values: longs,
-                };
-
-                return Ok(long_arr);
-            }
-            NBTTagType::String => {
-                let mut str_len = [0u8; 2];
-                cursor.read_exact(&mut str_len)?;
-                let str_len = u16::from_be_bytes(str_len) as usize;
-
-                let mut payload = vec![0u8; str_len];
-                cursor.read_exact(&mut payload)?;
-                let payload = str::from_utf8(&payload)?.to_owned();
-
-                let string = NBTNode::String {
-                    name,
-                    value: payload,
-                };
-
-                return Ok(string);
-            }
-            NBTTagType::List => {
-                // list item tag ID
-                let mut item_id = [0u8];
-                cursor.read_exact(&mut item_id)?;
-                let item_id = u8::from_be_bytes(item_id);
-                let item_id = NBTTagType::try_from(item_id)?;
-
-                // list size - 4 bytes
-                let mut list_size = [0u8; 4];
-                cursor.read_exact(&mut list_size)?;
-                let list_size = u32::from_be_bytes(list_size) as usize;
-
-                // payloads
-                let mut arr: Vec<NBTPayloadType> = Vec::new();
-
-                match item_id {
-                    NBTTagType::String => {
-                        for _ in 0..list_size {
-                            let mut str_len = [0u8; 2];
-                            cursor.read_exact(&mut str_len)?;
-                            let str_len = u16::from_be_bytes(str_len) as usize;
-
-                            let mut payload = vec![0u8; str_len];
-                            cursor.read_exact(&mut payload)?;
-                            let payload = str::from_utf8(&payload)?.to_owned();
-
-                            arr.push(NBTPayloadType::String(payload));
-                        }
-                    }
-                    _ => {}
-                }
-
-                let list = NBTNode::List { name, values: arr };
-
-                return Ok(list);
-            }
-            _ => {}
+            return Ok(long_arr);
         }
+        NBTTagType::String => {
+            let mut str_len = [0u8; 2];
+            cursor.read_exact(&mut str_len)?;
+            let str_len = u16::from_be_bytes(str_len) as usize;
+
+            let mut payload = vec![0u8; str_len];
+            cursor.read_exact(&mut payload)?;
+            let payload = str::from_utf8(&payload)?.to_owned();
+
+            let string = NBTNode::String {
+                name,
+                value: payload,
+            };
+
+            return Ok(string);
+        }
+        NBTTagType::List => {
+            // list item tag ID
+            let mut item_id = [0u8];
+            cursor.read_exact(&mut item_id)?;
+            let item_id = u8::from_be_bytes(item_id);
+            let item_id = NBTTagType::try_from(item_id)?;
+
+            // list size - 4 bytes
+            let mut list_size = [0u8; 4];
+            cursor.read_exact(&mut list_size)?;
+            let list_size = u32::from_be_bytes(list_size) as usize;
+
+            // payloads
+            let mut arr: Vec<NBTPayloadType> = Vec::new();
+
+            match item_id {
+                NBTTagType::String => {
+                    for _ in 0..list_size {
+                        let mut str_len = [0u8; 2];
+                        cursor.read_exact(&mut str_len)?;
+                        let str_len = u16::from_be_bytes(str_len) as usize;
+
+                        let mut payload = vec![0u8; str_len];
+                        cursor.read_exact(&mut payload)?;
+                        let payload = str::from_utf8(&payload)?.to_owned();
+
+                        arr.push(NBTPayloadType::String(payload));
+                    }
+                }
+                _ => {}
+            }
+
+            let list = NBTNode::List { name, values: arr };
+
+            return Ok(list);
+        }
+        _ => {}
     }
 
     Ok(NBTNode::Byte {
@@ -410,15 +416,37 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    /// `NBTCompound` {
-    ///     name: "",
-    ///     `NBTString` {
-    ///         name: "Status",
-    ///         value: "minecraft:full",
-    ///     }
-    /// }
     #[test]
     fn nbt_compound_parsing() -> Result<(), NBTParseError> {
+        let biome_palette: [u8; _] = [
+            0x0a, // Compound tag
+            0x00, 0x06, // name length = 6
+            0x62, 0x69, 0x6f, 0x6d, 0x65, 0x73, // name = biomes
+            0x09, // List tag
+            0x00, 0x07, // name length = 7
+            0x70, 0x61, 0x6c, 0x65, 0x74, 0x74, 0x65, // name = palette
+            0x08, // list item tag id = String
+            0x00, 0x00, 0x00, 0x01, // list size = 1
+            // payloads
+            0x00, 0x10, // str length = 16
+            0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, 0x66, //
+            0x74, 0x3a, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x73, // minecraft:plains
+            0x00, // END MARKER
+        ];
+
+        let mut cursor = Cursor::new(&biome_palette[..]);
+
+        let actual = parse_nbt_payload(&mut cursor)?;
+        let expected = NBTNode::Compound {
+            name: "biomes".to_owned(),
+            children: Vec::from([NBTNode::List {
+                name: "palette".to_owned(),
+                values: Vec::from([NBTPayloadType::String("minecraft:plains".to_owned())]),
+            }]),
+        };
+
+        assert_eq!(actual, expected);
+
         // Expected should be:
         // root NBTCompound { NBTString Status = "minecraft:full" }
         let nbt_data: [u8; _] = [
@@ -435,6 +463,7 @@ mod tests {
             0x00, 0x04, // name length = 4
             0x7a, 0x50, 0x6f, 0x73, // name = zPos
             0x00, 0x00, 0x00, 0x00, // value = 0
+            0x00, // END MARKER
         ];
 
         let mut cursor = Cursor::new(&nbt_data[..]);
@@ -454,7 +483,7 @@ mod tests {
             ]),
         };
 
-        // assert_eq!(actual, expected);
+        assert_eq!(actual, expected);
 
         let compound: [u8; _] = [
             0x0a, // Compound tag
@@ -468,7 +497,7 @@ mod tests {
             0x52, 0x65, 0x66, 0x65, 0x72, //
             0x65, 0x6e, 0x63, 0x65, 0x73, // name = References
             0x00, // End tag, mark end of compound
-            0x0a, // Combound tag
+            0x0a, // Compound tag
             0x00, 0x06, // name length = 6
             0x73, 0x74, 0x61, 0x72, 0x74, 0x73, // name = starts
             0x00, // End tag, mark end of compound
@@ -492,7 +521,7 @@ mod tests {
             ]),
         };
 
-        // assert_eq!(actual, expected);
+        assert_eq!(actual, expected);
 
         Ok(())
     }

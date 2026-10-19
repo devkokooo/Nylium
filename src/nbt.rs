@@ -2,6 +2,10 @@ use std::io::{Cursor, Read};
 
 use thiserror::Error;
 
+pub trait Decode<'input>: Sized {
+    fn decode(cursor: &mut Cursor<&'input [u8]>) -> Result<Self, NBTParseError>;
+}
+
 #[derive(PartialEq)]
 pub enum NBTTagType {
     /// Used to mark the end of compound tags.
@@ -402,14 +406,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             return Ok(long_arr);
         }
         NBTTagType::String => {
-            let mut str_len = [0u8; 2];
-            cursor.read_exact(&mut str_len)?;
-            let str_len = u16::from_be_bytes(str_len) as usize;
-
-            let mut payload = vec![0u8; str_len];
-            cursor.read_exact(&mut payload)?;
-            let payload = str::from_utf8(&payload)?.to_owned();
-
+            let payload = parse_nbt_string(cursor)?;
             let string = NBTNode::String {
                 name,
                 value: payload,
@@ -435,13 +432,7 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
             match item_id {
                 NBTTagType::String => {
                     for _ in 0..list_size {
-                        let mut str_len = [0u8; 2];
-                        cursor.read_exact(&mut str_len)?;
-                        let str_len = u16::from_be_bytes(str_len) as usize;
-
-                        let mut payload = vec![0u8; str_len];
-                        cursor.read_exact(&mut payload)?;
-                        let payload = str::from_utf8(&payload)?.to_owned();
+                        let payload = parse_nbt_string(cursor)?;
 
                         arr.push(NBTPayloadType::String(payload));
                     }
@@ -479,6 +470,18 @@ fn parse_nbt_name(cursor: &mut Cursor<&[u8]>) -> Result<String, NBTParseError> {
     let name = std::str::from_utf8(&name)?;
 
     Ok(name.to_owned())
+}
+
+fn parse_nbt_string(cursor: &mut Cursor<&[u8]>) -> Result<String, NBTParseError> {
+    let mut str_len = [0u8; 2];
+    cursor.read_exact(&mut str_len)?;
+    let str_len = u16::from_be_bytes(str_len) as usize;
+
+    let mut payload = vec![0u8; str_len];
+    cursor.read_exact(&mut payload)?;
+    let payload = str::from_utf8(&payload)?.to_owned();
+
+    Ok(payload)
 }
 
 #[cfg(test)]

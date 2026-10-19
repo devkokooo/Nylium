@@ -333,6 +333,18 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
 
             return Ok(float);
         }
+        NBTTagType::Double => {
+            let mut payload = [0u8; 8];
+            cursor.read_exact(&mut payload)?;
+            let payload = f64::from_be_bytes(payload);
+
+            let double = NBTNode::Double {
+                name,
+                value: payload,
+            };
+
+            return Ok(double);
+        }
         NBTTagType::LongArray => {
             let mut arr_len = [0u8; 4];
             cursor.read_exact(&mut arr_len)?;
@@ -727,6 +739,45 @@ mod tests {
         let expected_some = NBTNode::Float {
             name: "integrity".to_owned(),
             value: 6.310_887_2e-30,
+        };
+
+        let cases: [(&[u8], NBTNode); _] =
+            [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(data);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn nbt_double_parsing() -> Result<(), NBTParseError> {
+        let bytes_zero: [u8; _] = [
+            0x06, // Double tag
+            0x00, 0x06, // name length = 6
+            0x68, 0x65, 0x69, 0x67, 0x68, 0x74, // name = height
+            // payload = 0
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let expected_zero = NBTNode::Double {
+            name: "height".to_owned(),
+            value: 0.0,
+        };
+
+        let bytes_some: [u8; _] = [
+            0x06, // Double tag
+            0x00, 0x06, // name length = 6
+            0x68, 0x65, 0x69, 0x67, 0x68, 0x74, // name = height
+            // payload = 999.99
+            0x40, 0x8F, 0x3F, 0xEB, 0x85, 0x1E, 0xB8, 0x52,
+        ];
+        let expected_some = NBTNode::Double {
+            name: "height".to_owned(),
+            value: 999.99,
         };
 
         let cases: [(&[u8], NBTNode); _] =

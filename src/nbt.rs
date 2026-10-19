@@ -285,6 +285,18 @@ pub fn parse_nbt_payload(mut cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTP
 
             return Ok(byte);
         }
+        NBTTagType::Short => {
+            let mut payload = [0u8; 2];
+            cursor.read_exact(&mut payload)?;
+            let payload = i16::from_be_bytes(payload);
+
+            let short = NBTNode::Short {
+                name,
+                value: payload,
+            };
+
+            return Ok(short);
+        }
         NBTTagType::Int => {
             let mut payload = [0u8; 4];
             cursor.read_exact(&mut payload)?;
@@ -567,6 +579,39 @@ mod tests {
 
     #[test]
     fn nbt_short_parsing() -> Result<(), NBTParseError> {
+        let bytes_zero: [u8; _] = [
+            0x02, // Short tag
+            0x00, 0x06, // name length = 6
+            0x61, 0x70, 0x70, 0x6C, 0x65, 0x73, // name = apples
+            // payload = 0
+            0x00, 0x00,
+        ];
+        let expected_zero = NBTNode::Short {
+            name: "apples".to_owned(),
+            value: 0,
+        };
+
+        let bytes_some: [u8; _] = [
+            0x02, // Short tag
+            0x00, 0x06, // name length = 6
+            0x61, 0x70, 0x70, 0x6C, 0x65, 0x73, // name = apples
+            // payload = 20
+            0x00, 0x14,
+        ];
+        let expected_some = NBTNode::Short {
+            name: "apples".to_owned(),
+            value: 20,
+        };
+
+        let cases = [(bytes_zero, expected_zero), (bytes_some, expected_some)];
+
+        for (data, expected) in cases {
+            let mut cursor = Cursor::new(&data[..]);
+
+            let actual = parse_nbt_payload(&mut cursor)?;
+            assert_eq!(actual, expected);
+        }
+
         Ok(())
     }
 

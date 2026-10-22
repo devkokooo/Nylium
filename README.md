@@ -5,6 +5,13 @@ Inspired by [PumpkinMC](https://github.com/Pumpkin-MC/Pumpkin).
 
 Focus will be [**Java Edition protocol version 777 (26.3)**](https://minecraft.wiki/w/Java_Edition_protocol/Packets)
 
+## Outline Plan (vertical slice)
+- create vanilla world with different blocks, entities, block entities, items
+- find most common blocks, items, block states and implement those
+- for high level behavior, reverse engineer from original source code
+- for client-to-server interactions, use [SniffCraft](https://github.com/adepierre/SniffCraft) to verified sniffed packets
+- try to recreate the saved world in our custom server
+
 ## Outline Plan (mid)
 Intermediate Nylium implementation will include **chunk and block** logic.
 

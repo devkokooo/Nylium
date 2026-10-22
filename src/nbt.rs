@@ -150,7 +150,7 @@ impl std::fmt::Display for NBTTagType {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum NBTNode {
+pub enum NBTDataType {
     EndMarker,
     Byte {
         name: String,
@@ -186,11 +186,11 @@ pub enum NBTNode {
     },
     List {
         name: String,
-        values: Vec<NBTPayloadType>,
+        values: Vec<NBTDataType>,
     },
     Compound {
         name: String,
-        children: Vec<NBTNode>,
+        children: Vec<NBTDataType>,
     },
     IntArray {
         name: String,
@@ -202,17 +202,10 @@ pub enum NBTNode {
     },
 }
 
-#[derive(Debug, PartialEq)]
-pub enum NBTPayloadType {
-    Byte(i8),
-    Short(i16),
-    Int(i32),
-    Long(i64),
-    Float(f32),
-    Double(f64),
-    String(String),
-    Compound(NBTNode),
-    List(Vec<NBTPayloadType>),
+// TODO: refactor to use this instead of `NBTType`
+pub struct NBTNode {
+    pub name: String,
+    pub data_type: NBTDataType,
 }
 
 #[derive(Debug, Error)]
@@ -243,7 +236,7 @@ impl From<i8> for NBTParseError {
     }
 }
 
-pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParseError> {
+pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTDataType, NBTParseError> {
     if cursor.get_ref().len() < 3 {
         return Err(NBTParseError::PayloadTooSmall);
     }
@@ -254,7 +247,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
 
     // the ONLY tag without name length bytes
     if tag == NBTTagType::End {
-        return Ok(NBTNode::EndMarker);
+        return Ok(NBTDataType::EndMarker);
     }
 
     let name = parse_nbt_name(cursor)?;
@@ -264,24 +257,24 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
 
     match tag {
         NBTTagType::Compound => {
-            let mut children: Vec<NBTNode> = Vec::new();
+            let mut children: Vec<NBTDataType> = Vec::new();
 
             loop {
                 let node = parse_nbt_payload(cursor)?;
 
-                if node == NBTNode::EndMarker {
+                if node == NBTDataType::EndMarker {
                     break;
                 }
                 children.push(node);
             }
 
-            let compound = NBTNode::Compound { name, children };
+            let compound = NBTDataType::Compound { name, children };
 
             return Ok(compound);
         }
         NBTTagType::Byte => {
             let payload = parse_nbt_byte(cursor)?;
-            let byte = NBTNode::Byte {
+            let byte = NBTDataType::Byte {
                 name,
                 value: payload,
             };
@@ -290,7 +283,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::Short => {
             let payload = parse_nbt_short(cursor)?;
-            let short = NBTNode::Short {
+            let short = NBTDataType::Short {
                 name,
                 value: payload,
             };
@@ -299,7 +292,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::Int => {
             let payload = parse_nbt_int(cursor)?;
-            let int = NBTNode::Int {
+            let int = NBTDataType::Int {
                 name,
                 value: payload,
             };
@@ -308,7 +301,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::Long => {
             let payload = parse_nbt_long(cursor)?;
-            let long = NBTNode::Long {
+            let long = NBTDataType::Long {
                 name,
                 value: payload,
             };
@@ -317,7 +310,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::Float => {
             let payload = parse_nbt_float(cursor)?;
-            let float = NBTNode::Float {
+            let float = NBTDataType::Float {
                 name,
                 value: payload,
             };
@@ -326,7 +319,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::Double => {
             let payload = parse_nbt_double(cursor)?;
-            let double = NBTNode::Double {
+            let double = NBTDataType::Double {
                 name,
                 value: payload,
             };
@@ -335,7 +328,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::ByteArray => {
             let bytes = parse_nbt_byte_arr(cursor)?;
-            let byte_arr = NBTNode::ByteArray {
+            let byte_arr = NBTDataType::ByteArray {
                 name,
                 values: bytes,
             };
@@ -344,13 +337,13 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::IntArray => {
             let ints = parse_nbt_int_arr(cursor)?;
-            let int_arr = NBTNode::IntArray { name, values: ints };
+            let int_arr = NBTDataType::IntArray { name, values: ints };
 
             return Ok(int_arr);
         }
         NBTTagType::LongArray => {
             let longs = parse_nbt_long_arr(cursor)?;
-            let long_arr = NBTNode::LongArray {
+            let long_arr = NBTDataType::LongArray {
                 name,
                 values: longs,
             };
@@ -359,7 +352,7 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::String => {
             let payload = parse_nbt_string(cursor)?;
-            let string = NBTNode::String {
+            let string = NBTDataType::String {
                 name,
                 value: payload,
             };
@@ -368,14 +361,14 @@ pub fn parse_nbt_payload(cursor: &mut Cursor<&[u8]>) -> Result<NBTNode, NBTParse
         }
         NBTTagType::List => {
             let arr = parse_nbt_list(cursor)?;
-            let list = NBTNode::List { name, values: arr };
+            let list = NBTDataType::List { name, values: arr };
 
             return Ok(list);
         }
         NBTTagType::End => {}
     }
 
-    Ok(NBTNode::Byte {
+    Ok(NBTDataType::Byte {
         name: "fake".to_owned(),
         value: 0,
     })
@@ -507,7 +500,7 @@ fn parse_nbt_long_arr(cursor: &mut Cursor<&[u8]>) -> Result<Vec<i64>, NBTParseEr
     Ok(longs)
 }
 
-fn parse_nbt_list(cursor: &mut Cursor<&[u8]>) -> Result<Vec<NBTPayloadType>, NBTParseError> {
+fn parse_nbt_list(cursor: &mut Cursor<&[u8]>) -> Result<Vec<NBTDataType>, NBTParseError> {
     // list item tag ID
     let mut item_id = [0u8];
     cursor.read_exact(&mut item_id)?;
@@ -520,26 +513,32 @@ fn parse_nbt_list(cursor: &mut Cursor<&[u8]>) -> Result<Vec<NBTPayloadType>, NBT
     let list_size = u32::from_be_bytes(list_size) as usize;
 
     // payloads
-    let mut arr: Vec<NBTPayloadType> = Vec::new();
+    let mut arr: Vec<NBTDataType> = Vec::new();
 
     // TODO: doubles, shorts, int arrays, etc
     match item_id {
         NBTTagType::String => {
             for _ in 0..list_size {
                 let payload = parse_nbt_string(cursor)?;
-                arr.push(NBTPayloadType::String(payload));
+                arr.push(NBTDataType::String {
+                    name: String::new(),
+                    value: payload,
+                });
             }
         }
         NBTTagType::Compound => {
             for _ in 0..list_size {
                 let payload = parse_nbt_payload(cursor)?;
-                arr.push(NBTPayloadType::Compound(payload));
+                arr.push(payload);
             }
         }
         NBTTagType::List => {
             for _ in 0..list_size {
                 let payload = parse_nbt_list(cursor)?;
-                arr.push(NBTPayloadType::List(payload));
+                arr.push(NBTDataType::List {
+                    name: String::new(),
+                    values: payload,
+                });
             }
         }
         // 0x00 is empty list
@@ -574,11 +573,14 @@ mod tests {
             0x74, 0x3a, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x73, // minecraft:plains
             0x00, // END MARKER
         ];
-        let expected_biome = NBTNode::Compound {
+        let expected_biome = NBTDataType::Compound {
             name: "biomes".to_owned(),
-            children: Vec::from([NBTNode::List {
+            children: Vec::from([NBTDataType::List {
                 name: "palette".to_owned(),
-                values: Vec::from([NBTPayloadType::String("minecraft:plains".to_owned())]),
+                values: Vec::from([NBTDataType::String {
+                    name: String::new(),
+                    value: "minecraft:plains".to_owned(),
+                }]),
             }]),
         };
 
@@ -600,14 +602,14 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, // value = 0
             0x00, // END MARKER
         ];
-        let expected_multiple = NBTNode::Compound {
+        let expected_multiple = NBTDataType::Compound {
             name: String::new(),
             children: Vec::from([
-                NBTNode::String {
+                NBTDataType::String {
                     name: "Status".to_owned(),
                     value: "minecraft:full".to_owned(),
                 },
-                NBTNode::Int {
+                NBTDataType::Int {
                     name: "zPos".to_owned(),
                     value: 0,
                 },
@@ -632,21 +634,21 @@ mod tests {
             0x00, // End tag, mark end of compound
             0x00, // End tag for end of parent compound
         ];
-        let expected_nested = NBTNode::Compound {
+        let expected_nested = NBTDataType::Compound {
             name: "structures".to_owned(),
             children: Vec::from([
-                NBTNode::Compound {
+                NBTDataType::Compound {
                     name: "References".to_owned(),
                     children: Vec::new(),
                 },
-                NBTNode::Compound {
+                NBTDataType::Compound {
                     name: "starts".to_owned(),
                     children: Vec::new(),
                 },
             ]),
         };
 
-        let cases: [(&[u8], NBTNode); _] = [
+        let cases: [(&[u8], NBTDataType); _] = [
             (&biome_palette, expected_biome),
             (&multiple_types, expected_multiple),
             (&nested_compounds, expected_nested),
@@ -671,7 +673,7 @@ mod tests {
             0x59, // name (Y) - UTF-8 bytes
             0x40, // payload (byte, 64) - 1 byte, signed
         ];
-        let expected_byte = NBTNode::Byte {
+        let expected_byte = NBTDataType::Byte {
             name: "Y".to_owned(),
             value: 64,
         };
@@ -684,7 +686,7 @@ mod tests {
             0x59,        // name (Y) - UTF-8 bytes
             0b1111_1100, // payload (byte, -4) - 1 byte, signed
         ];
-        let expected_negative = NBTNode::Byte {
+        let expected_negative = NBTDataType::Byte {
             name: "Y".to_owned(),
             value: -4,
         };
@@ -696,12 +698,12 @@ mod tests {
             0x4D, 0x6F, 0x62, // name (Mob) - UTF-8 bytes
             0x01, // payload (bool, true) - 1 byte, signed
         ];
-        let expected_bool = NBTNode::Byte {
+        let expected_bool = NBTDataType::Byte {
             name: "Mob".to_owned(),
             value: 1, // 1 for true, 0 for false
         };
 
-        let cases: [(&[u8], NBTNode); _] = [
+        let cases: [(&[u8], NBTDataType); _] = [
             (&byte_data, expected_byte),
             (&byte_negative, expected_negative),
             (&bool_data, expected_bool),
@@ -726,7 +728,7 @@ mod tests {
             // payload = 0
             0x00, 0x00,
         ];
-        let expected_zero = NBTNode::Short {
+        let expected_zero = NBTDataType::Short {
             name: "apples".to_owned(),
             value: 0,
         };
@@ -738,12 +740,12 @@ mod tests {
             // payload = 20
             0x00, 0x14,
         ];
-        let expected_some = NBTNode::Short {
+        let expected_some = NBTDataType::Short {
             name: "apples".to_owned(),
             value: 20,
         };
 
-        let cases: [(&[u8], NBTNode); _] =
+        let cases: [(&[u8], NBTDataType); _] =
             [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
 
         for (data, expected) in cases {
@@ -764,7 +766,7 @@ mod tests {
             0x7a, 0x50, 0x6f, 0x73, // name = zPos
             0x00, 0x00, 0x00, 0x00, // value = 0
         ];
-        let expected_zero = NBTNode::Int {
+        let expected_zero = NBTDataType::Int {
             name: "zPos".to_owned(),
             value: 0,
         };
@@ -775,12 +777,12 @@ mod tests {
             0x79, 0x50, 0x6f, 0x73, // name = yPos
             0xff, 0xff, 0xff, 0xfc, // value = -4
         ];
-        let expected_some = NBTNode::Int {
+        let expected_some = NBTDataType::Int {
             name: "yPos".to_owned(),
             value: -4,
         };
 
-        let cases: [(&[u8], NBTNode); _] =
+        let cases: [(&[u8], NBTDataType); _] =
             [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
 
         for (data, expected) in cases {
@@ -803,7 +805,7 @@ mod tests {
             // payload = 0
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
-        let expected_zero = NBTNode::Long {
+        let expected_zero = NBTDataType::Long {
             name: "LastUpdate".to_owned(),
             value: 0,
         };
@@ -816,12 +818,12 @@ mod tests {
             // payload = 8589934591
             0x00, 0x00, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF,
         ];
-        let expected_some = NBTNode::Long {
+        let expected_some = NBTDataType::Long {
             name: "LastUpdate".to_owned(),
             value: 8_589_934_591,
         };
 
-        let cases: [(&[u8], NBTNode); _] =
+        let cases: [(&[u8], NBTDataType); _] =
             [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
 
         for (data, expected) in cases {
@@ -844,7 +846,7 @@ mod tests {
             // payload = 0
             0x00, 0x00, 0x00, 0x00,
         ];
-        let expected_zero = NBTNode::Float {
+        let expected_zero = NBTDataType::Float {
             name: "integrity".to_owned(),
             value: 0.0,
         };
@@ -857,12 +859,12 @@ mod tests {
             // payload = 6.3108872e-30
             0x0F, 0x00, 0x00, 0x00,
         ];
-        let expected_some = NBTNode::Float {
+        let expected_some = NBTDataType::Float {
             name: "integrity".to_owned(),
             value: 6.310_887_2e-30,
         };
 
-        let cases: [(&[u8], NBTNode); _] =
+        let cases: [(&[u8], NBTDataType); _] =
             [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
 
         for (data, expected) in cases {
@@ -884,7 +886,7 @@ mod tests {
             // payload = 0
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
-        let expected_zero = NBTNode::Double {
+        let expected_zero = NBTDataType::Double {
             name: "height".to_owned(),
             value: 0.0,
         };
@@ -896,12 +898,12 @@ mod tests {
             // payload = 999.99
             0x40, 0x8F, 0x3F, 0xEB, 0x85, 0x1E, 0xB8, 0x52,
         ];
-        let expected_some = NBTNode::Double {
+        let expected_some = NBTDataType::Double {
             name: "height".to_owned(),
             value: 999.99,
         };
 
-        let cases: [(&[u8], NBTNode); _] =
+        let cases: [(&[u8], NBTDataType); _] =
             [(&bytes_zero, expected_zero), (&bytes_some, expected_some)];
 
         for (data, expected) in cases {
@@ -928,7 +930,7 @@ mod tests {
         let mut cursor = Cursor::new(&bytes[..]);
 
         let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::String {
+        let expected = NBTDataType::String {
             name: "Status".to_owned(),
             value: "minecraft:full".to_owned(),
         };
@@ -948,7 +950,7 @@ mod tests {
             0x00, // list tag ID = 0
             0x00, 0x00, 0x00, 0x00, // list size = 0, num of items of tag ID
         ];
-        let expected_empty = NBTNode::List {
+        let expected_empty = NBTDataType::List {
             name: "block_entities".to_owned(),
             values: Vec::new(),
         };
@@ -963,9 +965,12 @@ mod tests {
             0x6d, 0x69, 0x6e, 0x65, 0x63, 0x72, 0x61, 0x66, //
             0x74, 0x3a, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x73, // minecraft:plains
         ];
-        let expected_some = NBTNode::List {
+        let expected_some = NBTDataType::List {
             name: "palette".to_owned(),
-            values: Vec::from([NBTPayloadType::String("minecraft:plains".to_owned())]),
+            values: Vec::from([NBTDataType::String {
+                name: String::new(),
+                value: "minecraft:plains".to_owned(),
+            }]),
         };
 
         let list_of_compound: [u8; _] = [
@@ -986,15 +991,15 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Long 1
             0x00, // END MARKER
         ];
-        let expected_list_compound = NBTNode::List {
+        let expected_list_compound = NBTDataType::List {
             name: "sections".to_owned(),
-            values: Vec::from([NBTPayloadType::Compound(NBTNode::Compound {
+            values: Vec::from([NBTDataType::Compound {
                 name: "block_states".to_owned(),
-                children: Vec::from([NBTNode::LongArray {
+                children: Vec::from([NBTDataType::LongArray {
                     name: "data".to_owned(),
                     values: Vec::from([0x0000_0000_0000_0000]),
                 }]),
-            })]),
+            }]),
         };
 
         let list_of_list: [u8; _] = [
@@ -1029,37 +1034,109 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 23
             0x00, 0x00, 0x00, 0x00, 0x00, // Empty list 24
         ];
-        let expected_list = NBTNode::List {
+        let expected_list = NBTDataType::List {
             name: "PostProcessing".to_owned(),
             values: Vec::from([
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
-                NBTPayloadType::List(Vec::new()),
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
+                NBTDataType::List {
+                    name: String::new(),
+                    values: Vec::new(),
+                },
             ]),
         };
 
-        let cases: [(&[u8], NBTNode); _] = [
+        let cases: [(&[u8], NBTDataType); _] = [
             (&empty_list, expected_empty),
             (&some_list, expected_some),
             (&list_of_compound, expected_list_compound),
@@ -1091,7 +1168,7 @@ mod tests {
         let mut cursor = Cursor::new(&bytes_some[..]);
 
         let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::ByteArray {
+        let expected = NBTDataType::ByteArray {
             name: "BlockLight".to_owned(),
             values: Vec::from([
                 0b1111_1111,
@@ -1128,7 +1205,7 @@ mod tests {
         let mut cursor = Cursor::new(&bytes_some[..]);
 
         let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::IntArray {
+        let expected = NBTDataType::IntArray {
             name: "BB".to_owned(),
             values: Vec::from([
                 0x00_00_00_00,
@@ -1195,7 +1272,7 @@ mod tests {
         let mut cursor = Cursor::new(&bytes_some[..]);
 
         let actual = parse_nbt_payload(&mut cursor)?;
-        let expected = NBTNode::LongArray {
+        let expected = NBTDataType::LongArray {
             name: "OCEAN_FLOOR".to_owned(),
             values: Vec::from([0x0080_4020_1008_0402; 37]),
         };

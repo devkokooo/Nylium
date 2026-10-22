@@ -159,7 +159,7 @@ mod tests {
         // Iterate through 1024 locations & timestamps
         for i in 0..1024 {
             // TODO: temp, for manual byte parsing
-            if i == 1 {
+            if i == 2 {
                 break;
             }
 
@@ -200,7 +200,7 @@ mod tests {
 
             writeln!(
                 output_file,
-                "Chunk (X:{chunk_x}, Z:{chunk_z}) [offset:{sector_offset}, size:{sector_size}, timestamp:{timestamp}]"
+                "\nChunk (X:{chunk_x}, Z:{chunk_z}) [offset:{sector_offset}, size:{sector_size}, timestamp:{timestamp}]"
             )?;
 
             // TODO: treat decompressed chunk data as NBT and parse it
@@ -227,6 +227,7 @@ mod tests {
                 }
                 let mut cursor = Cursor::new(decomp.as_slice());
                 let res = nbt::parse_nbt_payload(&mut cursor)?;
+                dbg!(res);
             }
         }
 

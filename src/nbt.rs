@@ -541,13 +541,10 @@ fn parse_nbt_list(cursor: &mut Cursor<&[u8]>) -> Result<Vec<NBTDataType>, NBTPar
                 });
             }
         }
-        // 0x00 is empty list
-        NBTTagType::End => {
-            return Ok(Vec::new());
-        }
         _ => {}
     }
 
+    // 0x00 is empty list
     Ok(arr)
 }
 

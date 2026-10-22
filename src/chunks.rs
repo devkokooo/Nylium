@@ -122,7 +122,8 @@ mod tests {
 
     #[test]
     fn region_file_chunk_parsing() -> Result<(), ChunkParsingError> {
-        let file = File::open("test_data/chunks/r.0.0.mca")?;
+        let file =
+            File::open("test_data/test_save/dimensions/minecraft/overworld/region/r.0.0.mca")?;
         let mut buf_reader = BufReader::new(file);
 
         // FIRST sector = table of 1024-element list of BE 32-bit ints

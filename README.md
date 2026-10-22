@@ -12,6 +12,16 @@ Focus will be [**Java Edition protocol version 777 (26.3)**](https://minecraft.w
 - for client-to-server interactions, use [SniffCraft](https://github.com/adepierre/SniffCraft) to verified sniffed packets
 - try to recreate the saved world in our custom server
 
+**TODOs**
+- [ ] Make server [show up in server list](https://minecraft.wiki/w/Java_Edition_protocol/Server_List_Ping)
+- [ ] When joining server, view loaded world (blocks and entities)
+- [ ] Player moves & rotates
+- [ ] Player action (block mining)
+- [ ] Player interacts
+- [ ] Player attack (entities)
+- [ ] Player punch (the air)
+- [ ] Basic game tick & gravity & bounding boxes
+
 ## Outline Plan (mid)
 Intermediate Nylium implementation will include **chunk and block** logic.
 

@@ -12,6 +12,8 @@ Focus will be [**Java Edition protocol version 777 (26.3)**](https://minecraft.w
 - for client-to-server interactions, use [SniffCraft](https://github.com/adepierre/SniffCraft) to verified sniffed packets
 - try to recreate the saved world in our custom server
 
+> Note: look into `futures::Stream` for wrapping TcpStream later, to yield decoded packets. Then iterate with `StreamExt` like so: `while let Some(packet) = stream.next().await`
+
 **TODOs**
 - [ ] Make server [show up in server list](https://minecraft.wiki/w/Java_Edition_protocol/Server_List_Ping)
 - [ ] When joining server, view loaded world (blocks and entities)

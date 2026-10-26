@@ -174,7 +174,7 @@ pub enum ServerPlayPacketId {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct ConnectionState {
+pub struct ConnectionState {
     pub(crate) server_state: ProtocolState,
     pub(crate) client_intent: Option<ClientIntent>,
 }
@@ -189,7 +189,7 @@ impl Default for ConnectionState {
 }
 
 #[allow(clippy::too_many_lines)]
-fn parse_incoming_packet(
+pub fn parse_incoming_packet(
     raw_bytes: &[u8],
     connection_state: &mut ConnectionState,
 ) -> Result<IncomingPacket, PacketDecodeError> {

@@ -74,6 +74,8 @@ pub enum PacketDecodeError {
     InvalidIntent,
     #[error("packet ID not known by server or unimplemented")]
     UnknownPacketId,
+    #[error("failed to parse incoming packet")]
+    NetworkIngest,
 }
 
 impl From<u8> for PacketDecodeError {

@@ -50,38 +50,6 @@ async fn process_socket(
     Ok(())
 }
 
-async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> std::io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    stream.read_to_end(&mut bytes).await?;
-
-    Ok(bytes)
-}
-
-async fn read_varint_prefix_len<R: AsyncRead + Unpin>(reader: &mut R) -> std::io::Result<usize> {
-    let mut val = 0usize;
-
-    for i in 0..3 {
-        let byte = reader.read_u8().await?;
-
-        // Each byte contributes 7 bits
-        let shift = i * 7;
-        val |= usize::from(byte & 0x7F)
-            .checked_shl(shift as u32)
-            .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "VarInt overflow")
-            })?;
-
-        if byte & 0x80 == 0 {
-            return Ok(val);
-        }
-    }
-
-    Err(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        "VarInt exceeds 3 bytes",
-    ))
-}
-
 /// Read available packets without compression
 /// <https://minecraft.wiki/w/Java_Edition_protocol/Packets#Without_compression>
 ///
@@ -93,7 +61,7 @@ async fn read_available(stream: &mut TcpStream) -> Result<Vec<u8>, PacketDecodeE
     let mut packet_len: usize = 0;
     let mut i = 0;
 
-    let mut prefix_len = [0u8];
+    let mut byte_buf = [0u8];
 
     // TODO: refactor VarInt helpers to handle this
     // read the next 1-3 bytes as VarInt to find prefix length
@@ -104,9 +72,9 @@ async fn read_available(stream: &mut TcpStream) -> Result<Vec<u8>, PacketDecodeE
             return Err(PacketDecodeError::NetworkIngest);
         }
 
-        match stream.read(&mut prefix_len).await? {
+        match stream.read(&mut byte_buf).await? {
             1 => {
-                packet_len = (packet_len << 7) | (prefix_len[0] as usize & 0x7F);
+                packet_len = (packet_len << 7) | (byte_buf[0] as usize & 0x7F);
                 if packet_len & 0x80 == 0 {
                     break;
                 }

@@ -1,8 +1,9 @@
 use std::io::{self, Cursor, Write};
 
-use crate::packets::{PacketDecode, PacketDecodeError, PacketEncode};
+use crate::packets::PacketEncode;
 
-const MAX_VARINT_LENGTH: usize = 5;
+const MAX_VARINT_PREFIX_LENGTH: usize = 3;
+const MAX_VARINT_DATA_LENGTH: usize = 5;
 
 /// The 7 least significant bits are used to encode the value and
 /// the most significant bit indicates whether there's another byte
@@ -105,11 +106,11 @@ fn decode_varint<const MAX_BYTES: usize>(cursor: &mut Cursor<&[u8]>) -> VarInt {
 }
 
 pub fn decode_varint_packet_len(cursor: &mut Cursor<&[u8]>) -> VarInt {
-    decode_varint::<3>(cursor)
+    decode_varint::<MAX_VARINT_PREFIX_LENGTH>(cursor)
 }
 
 pub fn decode_varint_value(cursor: &mut Cursor<&[u8]>) -> VarInt {
-    decode_varint::<5>(cursor)
+    decode_varint::<MAX_VARINT_DATA_LENGTH>(cursor)
 }
 
 #[cfg(test)]

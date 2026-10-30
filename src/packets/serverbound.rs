@@ -1,7 +1,10 @@
 use std::io::Cursor;
 
 use crate::{
-    data_types::{ClientIntent, UShort, varint::VarInt},
+    data_types::{
+        ClientIntent, UShort,
+        varint::{VarInt, decode_varint_value},
+    },
     packets::{PacketDecode, PacketDecodeError, ProtocolState, send_status_response_packet},
 };
 
@@ -236,7 +239,7 @@ fn parse_handshake_packet_payload(
     cursor: &mut Cursor<&[u8]>,
     connection_state: &mut ConnectionState,
 ) -> Result<ServerHandshakePacket, PacketDecodeError> {
-    let VarInt(protocol_version) = VarInt::decode(cursor)?;
+    let VarInt(protocol_version) = decode_varint_value(cursor);
     let server_address = <&str>::decode(cursor)?;
     let server_port = u16::decode(cursor)?;
     let intent = ClientIntent::decode(cursor)?;

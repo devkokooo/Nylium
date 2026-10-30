@@ -75,32 +75,41 @@ impl PacketEncode for VarInt {
     }
 }
 
-/// Reads a sequence of bytes and returns a signed 32-bit VarInt
-impl PacketDecode<'_> for VarInt {
-    fn decode(cursor: &mut Cursor<&'_ [u8]>) -> Result<Self, PacketDecodeError> {
-        use std::io::BufRead;
+/// Reads a sequence of bytes and returns a signed 32-bit `VarInt`
+///
+/// `MAX_BYTES` could be 3 for packet prefix length
+/// or 5 for packet data values
+fn decode_varint<const MAX_BYTES: usize>(cursor: &mut Cursor<&[u8]>) -> VarInt {
+    use std::io::BufRead;
 
-        let mut val: i32 = 0;
+    let mut val: i32 = 0;
 
-        for i in 0..MAX_VARINT_LENGTH {
-            let offset = cursor.position() as usize;
-            let remaining = &cursor.get_ref()[offset..];
+    for i in 0..MAX_BYTES {
+        let offset = cursor.position() as usize;
+        let remaining = &cursor.get_ref()[offset..];
 
-            if let Some(byte) = remaining.first() {
-                // save bytes in BE form
-                val |= (i32::from(*byte) & 0b0111_1111) << (7 * i);
+        if let Some(byte) = remaining.first() {
+            // save bytes in BE form
+            val |= (i32::from(*byte) & 0b0111_1111) << (7 * i);
 
-                // Mask first bit to check for next byte
-                // if 0, we reached the end of this payload
-                if byte & 0b1000_0000 == 0 {
-                    cursor.consume(1);
-                    break;
-                }
+            // Mask first bit to check for next byte
+            // if 0, we reached the end of this payload
+            if byte & 0b1000_0000 == 0 {
+                cursor.consume(1);
+                break;
             }
-            cursor.consume(1);
         }
-        Ok(VarInt(val))
+        cursor.consume(1);
     }
+    VarInt(val)
+}
+
+pub fn decode_varint_packet_len(cursor: &mut Cursor<&[u8]>) -> VarInt {
+    decode_varint::<3>(cursor)
+}
+
+pub fn decode_varint_value(cursor: &mut Cursor<&[u8]>) -> VarInt {
+    decode_varint::<5>(cursor)
 }
 
 #[cfg(test)]
@@ -109,7 +118,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn varint_read() {
+    fn varint_read_value() {
         let cases: [(&[u8], i32); _] = [
             (&[0b0000_0000], 0),
             (&[0b0000_0001], 1),
@@ -154,7 +163,7 @@ mod tests {
 
         for (bytes, expected) in cases {
             let mut cursor = Cursor::new(bytes);
-            let VarInt(actual) = VarInt::decode(&mut cursor).unwrap();
+            let VarInt(actual) = decode_varint_value(&mut cursor);
 
             assert_eq!(actual, expected);
         }

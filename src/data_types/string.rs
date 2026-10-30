@@ -1,7 +1,7 @@
 use std::io::{self, Cursor, Write};
 
 use crate::{
-    data_types::varint::VarInt,
+    data_types::varint::{VarInt, decode_varint_value},
     packets::{PacketDecode, PacketDecodeError, PacketEncode},
 };
 
@@ -44,7 +44,7 @@ impl<'a> PacketDecode<'a> for &'a str {
     fn decode(cursor: &mut Cursor<&'a [u8]>) -> Result<Self, PacketDecodeError> {
         use std::io::BufRead;
 
-        let VarInt(strlen_in_bytes) = VarInt::decode(cursor)?;
+        let VarInt(strlen_in_bytes) = decode_varint_value(cursor);
         let strlen_in_bytes = strlen_in_bytes as usize;
 
         let start = cursor.position() as usize;

@@ -2,7 +2,7 @@ pub mod string;
 pub mod varint;
 
 use crate::{
-    data_types::varint::VarInt,
+    data_types::varint::{VarInt, decode_varint_value},
     packets::{PacketDecode, PacketDecodeError, PacketEncode},
 };
 use std::io::{Cursor, Read, Write};
@@ -74,7 +74,7 @@ pub enum ClientIntent {
 
 impl PacketDecode<'_> for ClientIntent {
     fn decode(cursor: &mut Cursor<&'_ [u8]>) -> Result<Self, PacketDecodeError> {
-        match VarInt::decode(cursor)? {
+        match decode_varint_value(cursor) {
             VarInt(1) => Ok(ClientIntent::Status),
             VarInt(2) => Ok(ClientIntent::Login),
             VarInt(3) => Ok(ClientIntent::Transfer),

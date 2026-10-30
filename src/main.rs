@@ -10,6 +10,7 @@ use tokio::{
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Bind listener to address
+    // TODO: read address and port from server.properties
     let addr = "127.0.0.1:25565";
     let listener = TcpListener::bind(addr).await?;
     println!("Binding to: {addr}");
@@ -56,7 +57,7 @@ async fn read_available(stream: &mut TcpStream) -> Result<Vec<u8>, PacketDecodeE
 
     let mut len_readbuf = [0u8];
 
-    // Packet with compression
+    // Packet without compression
     // Prefix Length = VarInt
     // Packet ID = VarInt
     // Data = Byte Array
